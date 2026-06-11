@@ -48,6 +48,8 @@ const emptyState: AppState = {
   settlements: [],
 };
 
+const goalOptions = Array.from({ length: 11 }, (_, index) => index);
+
 export function WorldCupApp({ initialView }: { initialView: View }) {
   const [view, setView] = useState<View>(initialView);
   const [state, setState] = useState<AppState>(emptyState);
@@ -486,11 +488,23 @@ function PredictionForm({
         </label>
         <label className="block">
           <span className="mb-1 block text-sm font-bold">{match.homeTeam} 进球</span>
-          <input className="w-full rounded-md border border-ink/15 bg-white px-3 py-2" disabled={locked} min={0} onChange={(event) => setHomeScore(Number(event.target.value))} type="number" value={homeScore} />
+          <select className="w-full rounded-md border border-ink/15 bg-white px-3 py-2" disabled={locked} onChange={(event) => setHomeScore(Number(event.target.value))} value={homeScore}>
+            {goalOptions.map((goal) => (
+              <option key={goal} value={goal}>
+                {goal}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="block">
           <span className="mb-1 block text-sm font-bold">{match.awayTeam} 进球</span>
-          <input className="w-full rounded-md border border-ink/15 bg-white px-3 py-2" disabled={locked} min={0} onChange={(event) => setAwayScore(Number(event.target.value))} type="number" value={awayScore} />
+          <select className="w-full rounded-md border border-ink/15 bg-white px-3 py-2" disabled={locked} onChange={(event) => setAwayScore(Number(event.target.value))} value={awayScore}>
+            {goalOptions.map((goal) => (
+              <option key={goal} value={goal}>
+                {goal}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="block">
           <span className="mb-1 block text-sm font-bold">趣味题</span>
