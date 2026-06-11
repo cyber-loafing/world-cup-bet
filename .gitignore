@@ -1,0 +1,25 @@
+.DS_Store
+.env
+.env.local
+.env.*.local
+.next/
+out/
+node_modules/
+coverage/
+dist/
+*.tsbuildinfo
+
+# InsForge & AI agent skills
+.insforge
+.agent
+.agents
+.augment
+.claude
+.cline
+.github/copilot*
+.kilocode
+.qoder
+.qwen
+.roo
+.trae
+.windsurf
