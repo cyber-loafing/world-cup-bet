@@ -114,6 +114,14 @@ async function fetchFixtures(): Promise<{ fixtures: ApiFixture[]; source: string
       throw new Error(`API-Football returned 0 fixtures. Results=${payload.results ?? "unknown"}.`);
     }
     console.log(`API-Football returned ${payload.response.length} fixtures.`);
+    if (payload.response.length < 104) {
+      const fallbackFixtures = await fetchOpenFootballFixtures();
+      return {
+        fixtures: mergeApiFootballFixtures(fallbackFixtures, payload.response),
+        source: "api-football+openfootball",
+        note: `API-Football currently returned ${payload.response.length}/104 fixtures; openfootball filled the remaining schedule.`,
+      };
+    }
     return { fixtures: payload.response, source: "api-football" };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown API-Football error";
@@ -190,6 +198,24 @@ function mapOpenFootballMatch(match: OpenFootballMatch, fallbackId: number): Api
       penalty: { home: score?.p?.[0] ?? null, away: score?.p?.[1] ?? null },
     },
   };
+}
+
+function mergeApiFootballFixtures(fallbackFixtures: ApiFixture[], apiFixtures: ApiFixture[]) {
+  const sortedFallback = [...fallbackFixtures].sort((a, b) => new Date(a.fixture.date).getTime() - new Date(b.fixture.date).getTime());
+  const sortedApi = [...apiFixtures].sort((a, b) => new Date(a.fixture.date).getTime() - new Date(b.fixture.date).getTime());
+  return sortedFallback.map((fallbackFixture, index) => {
+    const apiFixture = sortedApi[index];
+    if (!apiFixture) {
+      return fallbackFixture;
+    }
+    return {
+      ...apiFixture,
+      league: {
+        ...apiFixture.league,
+        round: fallbackFixture.league.round || apiFixture.league.round,
+      },
+    };
+  });
 }
 
 async function upsertMatch(fixture: ApiFixture, matchNumber: number, events: ApiEvent[]): Promise<Match> {

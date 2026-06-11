@@ -389,7 +389,7 @@ function MatchDetail({
         {players.map((player) => {
           const prediction = predictions.find((item) => item.playerId === player.id);
           const settlement = settlements.find((item) => item.playerId === player.id);
-          return <PredictionSummary key={player.id} player={player} prediction={prediction} settlement={settlement} />;
+          return <PredictionSummary key={player.id} match={match} player={player} prediction={prediction} settlement={settlement} />;
         })}
       </div>
     </div>
@@ -485,11 +485,11 @@ function PredictionForm({
           </select>
         </label>
         <label className="block">
-          <span className="mb-1 block text-sm font-bold">主队进球</span>
+          <span className="mb-1 block text-sm font-bold">{match.homeTeam} 进球</span>
           <input className="w-full rounded-md border border-ink/15 bg-white px-3 py-2" disabled={locked} min={0} onChange={(event) => setHomeScore(Number(event.target.value))} type="number" value={homeScore} />
         </label>
         <label className="block">
-          <span className="mb-1 block text-sm font-bold">客队进球</span>
+          <span className="mb-1 block text-sm font-bold">{match.awayTeam} 进球</span>
           <input className="w-full rounded-md border border-ink/15 bg-white px-3 py-2" disabled={locked} min={0} onChange={(event) => setAwayScore(Number(event.target.value))} type="number" value={awayScore} />
         </label>
         <label className="block">
@@ -524,7 +524,17 @@ function PredictionForm({
   );
 }
 
-function PredictionSummary({ player, prediction, settlement }: { player: Player; prediction: Prediction | undefined; settlement: Settlement | undefined }) {
+function PredictionSummary({
+  match,
+  player,
+  prediction,
+  settlement,
+}: {
+  match: Match;
+  player: Player;
+  prediction: Prediction | undefined;
+  settlement: Settlement | undefined;
+}) {
   return (
     <div className="rounded-md bg-white p-3 ring-1 ring-ink/10">
       <div className="flex items-center justify-between gap-3">
@@ -532,10 +542,18 @@ function PredictionSummary({ player, prediction, settlement }: { player: Player;
         {settlement ? <span className="font-black">{settlement.points} 分 · {formatMoney(settlement.netAmount)}</span> : <span className="text-sm font-bold text-ink/50">未结算</span>}
       </div>
       <p className="mt-1 text-sm font-semibold text-ink/65">
-        {prediction ? `选择 ${prediction.pickResult}，比分 ${prediction.predictedHomeScore}-${prediction.predictedAwayScore}，趣味题 ${prediction.funAnswer ? "是" : "否"}` : "尚未下注"}
+        {prediction
+          ? `选择 ${pickResultLabel(prediction.pickResult, match)}，${match.homeTeam} ${prediction.predictedHomeScore} - ${prediction.predictedAwayScore} ${match.awayTeam}，趣味题 ${prediction.funAnswer ? "是" : "否"}`
+          : "尚未下注"}
       </p>
     </div>
   );
+}
+
+function pickResultLabel(pickResult: Prediction["pickResult"], match: Match) {
+  if (pickResult === "home") return `${match.homeTeam} 胜`;
+  if (pickResult === "away") return `${match.awayTeam} 胜`;
+  return "平局";
 }
 
 function LedgerView({ matches, players, settlements }: { matches: Match[]; players: Player[]; settlements: Settlement[] }) {

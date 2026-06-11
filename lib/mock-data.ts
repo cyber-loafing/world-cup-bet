@@ -6,14 +6,14 @@ export const mockPlayers: Player[] = [
     id: "p1",
     userId: "mock-user-a",
     code: "player_a",
-    displayName: "我",
+    displayName: "贝贝",
     avatarColor: "#0f8a5f",
   },
   {
     id: "p2",
     userId: "mock-user-b",
     code: "player_b",
-    displayName: "女朋友",
+    displayName: "九妹",
     avatarColor: "#ff6b5f",
   },
 ];
