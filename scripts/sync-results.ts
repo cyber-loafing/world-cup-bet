@@ -7,6 +7,7 @@ const insforgeUrl = requiredEnv("NEXT_PUBLIC_INSFORGE_URL");
 const insforgeApiKey = requiredEnv("INSFORGE_API_KEY");
 const apiFootballKey = requiredEnv("API_FOOTBALL_KEY");
 const apiBaseUrl = "https://v3.football.api-sports.io";
+const openFootballScheduleUrl = "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json";
 
 const insforge = createAdminClient({
   baseUrl: insforgeUrl,
@@ -44,6 +45,34 @@ type ApiEvent = {
   detail: string;
 };
 
+type ApiFootballPayload<T> = {
+  get?: string;
+  parameters?: Record<string, unknown>;
+  errors?: unknown;
+  results?: number;
+  response: T;
+};
+
+type OpenFootballMatch = {
+  round: string;
+  date: string;
+  time?: string;
+  team1: string;
+  team2: string;
+  group?: string;
+  ground?: string;
+  score?: {
+    ft?: [number, number];
+    et?: [number, number];
+    p?: [number, number];
+  };
+};
+
+type OpenFootballPayload = {
+  name: string;
+  matches: OpenFootballMatch[];
+};
+
 type DbPrediction = {
   id: string;
   match_id: string;
@@ -59,18 +88,18 @@ type DbPrediction = {
 async function main() {
   const runId = await createSyncRun();
   try {
-    const fixtures = await fetchFixtures();
+    const { fixtures, source, note } = await fetchFixtures();
     const sortedFixtures = fixtures.sort((a, b) => new Date(a.fixture.date).getTime() - new Date(b.fixture.date).getTime());
     const upsertedMatches: Match[] = [];
 
     for (const [index, fixture] of sortedFixtures.entries()) {
-      const events = isFinished(fixture) ? await fetchEvents(fixture.fixture.id) : [];
+      const events = fixture.fixture.id > 0 && isFinished(fixture) ? await fetchEvents(fixture.fixture.id) : [];
       const match = await upsertMatch(fixture, index + 1, events);
       upsertedMatches.push(match);
     }
 
     await settleFinishedMatches(upsertedMatches.filter((match) => match.status === "finished"));
-    await finishSyncRun(runId, "success", `Synced ${upsertedMatches.length} fixtures.`);
+    await finishSyncRun(runId, "success", [`Synced ${upsertedMatches.length} fixtures from ${source}.`, note].filter(Boolean).join(" "));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown sync error";
     await finishSyncRun(runId, "error", message);
@@ -78,17 +107,32 @@ async function main() {
   }
 }
 
-async function fetchFixtures(): Promise<ApiFixture[]> {
-  const payload = await apiGet<{ response: ApiFixture[] }>("/fixtures?league=1&season=2026");
-  return payload.response;
+async function fetchFixtures(): Promise<{ fixtures: ApiFixture[]; source: string; note?: string }> {
+  try {
+    const payload = await apiGet<ApiFixture[]>("/fixtures?league=1&season=2026");
+    if (payload.response.length === 0) {
+      throw new Error(`API-Football returned 0 fixtures. Results=${payload.results ?? "unknown"}.`);
+    }
+    console.log(`API-Football returned ${payload.response.length} fixtures.`);
+    return { fixtures: payload.response, source: "api-football" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown API-Football error";
+    console.warn(`API-Football schedule unavailable; falling back to openfootball. ${message}`);
+    const fixtures = await fetchOpenFootballFixtures();
+    return {
+      fixtures,
+      source: "openfootball",
+      note: `API-Football unavailable: ${message}`,
+    };
+  }
 }
 
 async function fetchEvents(fixtureId: number): Promise<ApiEvent[]> {
-  const payload = await apiGet<{ response: ApiEvent[] }>(`/fixtures/events?fixture=${fixtureId}`);
+  const payload = await apiGet<ApiEvent[]>(`/fixtures/events?fixture=${fixtureId}`);
   return payload.response;
 }
 
-async function apiGet<T>(path: string): Promise<T> {
+async function apiGet<T>(path: string): Promise<ApiFootballPayload<T>> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     headers: {
       "x-apisports-key": apiFootballKey,
@@ -97,14 +141,62 @@ async function apiGet<T>(path: string): Promise<T> {
   if (!response.ok) {
     throw new Error(`API-Football request failed ${response.status}: ${await response.text()}`);
   }
-  return (await response.json()) as T;
+  const payload = (await response.json()) as ApiFootballPayload<T>;
+  const apiErrors = formatApiFootballErrors(payload.errors);
+  if (apiErrors) {
+    throw new Error(`API-Football returned errors for ${path}: ${apiErrors}`);
+  }
+  return payload;
+}
+
+async function fetchOpenFootballFixtures(): Promise<ApiFixture[]> {
+  const response = await fetch(openFootballScheduleUrl);
+  if (!response.ok) {
+    throw new Error(`openfootball schedule request failed ${response.status}: ${await response.text()}`);
+  }
+  const payload = (await response.json()) as OpenFootballPayload;
+  if (!Array.isArray(payload.matches) || payload.matches.length === 0) {
+    throw new Error("openfootball schedule returned no matches.");
+  }
+  console.log(`openfootball returned ${payload.matches.length} fixtures.`);
+  return payload.matches.map((match, index) => mapOpenFootballMatch(match, index + 1));
+}
+
+function mapOpenFootballMatch(match: OpenFootballMatch, fallbackId: number): ApiFixture {
+  const score = match.score;
+  const statusShort = score?.ft ? "FT" : "NS";
+  return {
+    fixture: {
+      id: -fallbackId,
+      date: parseOpenFootballKickoff(match.date, match.time).toISOString(),
+      status: { short: statusShort, long: score?.ft ? "Match Finished" : "Not Started" },
+      venue: { name: match.ground },
+    },
+    league: {
+      round: match.group ?? match.round,
+    },
+    teams: {
+      home: { name: match.team1, winner: inferWinner(match.team1, match.team2, score) === match.team1 },
+      away: { name: match.team2, winner: inferWinner(match.team1, match.team2, score) === match.team2 },
+    },
+    goals: {
+      home: score?.ft?.[0] ?? null,
+      away: score?.ft?.[1] ?? null,
+    },
+    score: {
+      halftime: { home: null, away: null },
+      fulltime: { home: score?.ft?.[0] ?? null, away: score?.ft?.[1] ?? null },
+      extratime: { home: score?.et?.[0] ?? null, away: score?.et?.[1] ?? null },
+      penalty: { home: score?.p?.[0] ?? null, away: score?.p?.[1] ?? null },
+    },
+  };
 }
 
 async function upsertMatch(fixture: ApiFixture, matchNumber: number, events: ApiEvent[]): Promise<Match> {
   const funQuestionKey = chooseFunQuestion(fixture.fixture.id);
   const eventFacts = summarizeEvents(events);
   const row = {
-    api_football_fixture_id: fixture.fixture.id,
+    api_football_fixture_id: fixture.fixture.id > 0 ? fixture.fixture.id : null,
     match_number: matchNumber,
     stage: mapStage(fixture.league.round),
     group_name: parseGroupName(fixture.league.round),
@@ -129,7 +221,7 @@ async function upsertMatch(fixture: ApiFixture, matchNumber: number, events: Api
 
   const { data, error } = await insforge.database
     .from("matches")
-    .upsert(row, { onConflict: "api_football_fixture_id" })
+    .upsert(row, { onConflict: "match_number" })
     .select("*")
     .single();
   if (error) {
@@ -220,7 +312,43 @@ function isFinished(fixture: ApiFixture) {
 }
 
 function chooseFunQuestion(fixtureId: number): FunQuestionKey {
-  return funQuestionOptions[fixtureId % funQuestionOptions.length].value;
+  return funQuestionOptions[Math.abs(fixtureId) % funQuestionOptions.length].value;
+}
+
+function parseOpenFootballKickoff(date: string, time: string | undefined) {
+  const [year, month, day] = date.split("-").map(Number);
+  const match = (time ?? "00:00 UTC").match(/^(\d{1,2}):(\d{2})(?:\s+UTC([+-]\d{1,2}))?$/);
+  if (!match) {
+    throw new Error(`Unsupported openfootball kickoff time: ${date} ${time ?? ""}`.trim());
+  }
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const offset = match[3] ? Number(match[3]) : 0;
+  return new Date(Date.UTC(year, month - 1, day, hour - offset, minute));
+}
+
+function inferWinner(team1: string, team2: string, score: OpenFootballMatch["score"]) {
+  const decisiveScore = score?.p ?? score?.et ?? score?.ft;
+  if (!decisiveScore || decisiveScore[0] === decisiveScore[1]) {
+    return null;
+  }
+  return decisiveScore[0] > decisiveScore[1] ? team1 : team2;
+}
+
+function formatApiFootballErrors(errors: unknown) {
+  if (!errors) return "";
+  if (Array.isArray(errors)) {
+    return errors.length > 0 ? errors.map(String).join("; ") : "";
+  }
+  if (typeof errors === "string") {
+    return errors.trim();
+  }
+  if (typeof errors === "object") {
+    const entries = Object.entries(errors as Record<string, unknown>);
+    if (entries.length === 0) return "";
+    return entries.map(([key, value]) => `${key}: ${String(value)}`).join("; ");
+  }
+  return String(errors);
 }
 
 function summarizeEvents(events: ApiEvent[]) {
