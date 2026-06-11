@@ -1,4 +1,5 @@
 import { insforge } from "@/lib/insforge";
+import { clearRememberedSession, rememberSession, restoreRememberedSession } from "@/lib/auth-session";
 import { mockMatches, mockPlayers, mockPredictions, mockSettlements } from "@/lib/mock-data";
 import type { Match, Player, Prediction, Settlement } from "@/lib/types";
 
@@ -69,28 +70,33 @@ export async function getSessionUser() {
   if (!insforge) {
     return null;
   }
+
   const { data, error } = await insforge.auth.getCurrentUser();
-  if (error) {
-    return null;
+  if (!error && data?.user) {
+    return data.user;
   }
-  return data?.user ?? null;
+
+  return restoreRememberedSession();
 }
 
 export async function signIn(email: string, password: string) {
   if (!insforge) {
     throw new Error("InsForge is not configured.");
   }
-  const { error } = await insforge.auth.signInWithPassword({ email, password });
+  const { data, error } = await insforge.auth.signInWithPassword({ email, password });
   if (error) {
     throw error;
   }
+  rememberSession(data?.accessToken, data?.user);
 }
 
 export async function signOut() {
+  clearRememberedSession();
   if (!insforge) {
     return;
   }
   await insforge.auth.signOut();
+  insforge.setAccessToken(null);
 }
 
 export async function loadPlayers(): Promise<Player[]> {

@@ -62,8 +62,8 @@ export function WorldCupApp({ initialView }: { initialView: View }) {
     setLoading(true);
     setError(null);
     try {
-      const [user, players, matches, predictions, settlements] = await Promise.all([
-        getSessionUser(),
+      const user = await getSessionUser();
+      const [players, matches, predictions, settlements] = await Promise.all([
         loadPlayers(),
         loadMatches(),
         loadPredictions(),
