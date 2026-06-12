@@ -42,6 +42,15 @@ type AppState = {
   settlements: Settlement[];
 };
 
+type DramaMode = "empty" | "tie" | "close" | "breakaway";
+
+type DramaState = {
+  line: string;
+  mode: DramaMode;
+  leaderId: string | null;
+  trailerId: string | null;
+};
+
 const emptyState: AppState = {
   matches: [],
   players: [],
@@ -256,11 +265,11 @@ function Dashboard({
   const finished = matches.filter((match) => match.status === "finished").length;
   const totalNet = settlements.reduce((sum, row) => sum + Math.max(row.netAmount, 0), 0);
   const leader = stats[0] ?? null;
-  const runnerStats = normalizeRunnerStats(stats);
+  const drama = buildDramaState(stats);
+  const runnerStats = normalizeRunnerStats(stats, drama.mode);
   const gap = stats.length > 1 ? Math.abs(stats[0].netAmount - stats[1].netAmount) : 0;
   const headline = leader && gap > 0 ? `${leader.displayName} 暂时领先 ${gap}r` : "现在打成平手";
   const todayMatches = matches.filter((match) => getBeijingDateKey(match.kickoffAt) === getBeijingDateKey(new Date()));
-  const dramaLine = buildDramaLine(stats);
 
   return (
     <section className="grid gap-4">
@@ -281,12 +290,12 @@ function Dashboard({
             </div>
           </div>
 
-          <PixelRace stats={runnerStats} leaderId={leader?.playerId ?? null} />
+          <PixelRace drama={drama} stats={runnerStats} />
         </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-        <DramaCard line={dramaLine} />
+        <DramaCard line={drama.line} />
         <TodayCalendar matches={todayMatches} />
       </div>
 
@@ -360,22 +369,30 @@ function TodayCalendar({ matches }: { matches: Match[] }) {
   );
 }
 
-function normalizeRunnerStats(stats: DashboardStats[]) {
+function normalizeRunnerStats(stats: DashboardStats[], mode: DramaMode) {
   const sorted = [...stats].sort((a, b) => b.netAmount - a.netAmount || b.points - a.points);
   if (sorted.length < 2) {
     return sorted.map((row) => ({ ...row, lane: 0, left: 48 }));
   }
-  const leaderAmount = sorted[0].netAmount;
-  const trailerAmount = sorted[sorted.length - 1].netAmount;
-  const spread = Math.max(1, leaderAmount - trailerAmount);
+  if (mode === "tie") {
+    return sorted.map((row, index) => ({ ...row, lane: index, left: index === 0 ? 46 : 54 }));
+  }
+  if (mode === "close") {
+    return sorted.map((row, index) => ({ ...row, lane: index, left: index === 0 ? 62 : 43 }));
+  }
+  if (mode === "breakaway") {
+    return sorted.map((row, index) => ({ ...row, lane: index, left: index === 0 ? 74 : 24 }));
+  }
   return sorted.map((row, index) => ({
     ...row,
     lane: index,
-    left: Math.min(72, Math.max(18, 22 + ((row.netAmount - trailerAmount) / spread) * 50)),
+    left: 40 + index * 14,
   }));
 }
 
-function PixelRace({ stats, leaderId }: { stats: Array<DashboardStats & { lane: number; left: number }>; leaderId: string | null }) {
+function PixelRace({ stats, drama }: { stats: Array<DashboardStats & { lane: number; left: number }>; drama: DramaState }) {
+  const ballStyle = getBallStyle(stats, drama);
+
   return (
     <div className="pixel-race" aria-label="情侣竞猜像素追逐动画">
       <div className="pixel-scoreboard">
@@ -387,24 +404,47 @@ function PixelRace({ stats, leaderId }: { stats: Array<DashboardStats & { lane: 
           </div>
         ))}
       </div>
-      <div className="pixel-track" aria-hidden="true">
+      <div className={clsx("pixel-track", `drama-${drama.mode}`)} aria-hidden="true">
         <div className="pixel-sun" />
         <div className="pixel-cloud pixel-cloud-one" />
         <div className="pixel-cloud pixel-cloud-two" />
-        <div className="pixel-ball" />
+        <div className="pixel-stand pixel-stand-left" />
+        <div className="pixel-stand pixel-stand-right" />
+        <div className="pixel-goal pixel-goal-left" />
+        <div className="pixel-goal pixel-goal-right" />
+        <div className="pixel-field-line pixel-half-line" />
+        <div className="pixel-field-line pixel-box-left" />
+        <div className="pixel-field-line pixel-box-right" />
+        <div className="pixel-center-circle" />
+        <div className="pixel-ball" style={ballStyle} />
         {stats.map((row) => (
           <div
-            className={clsx("pixel-runner", row.playerId === leaderId ? "is-leading" : "is-chasing")}
+            className={clsx("pixel-runner", row.playerId === drama.leaderId ? "is-leading" : "is-chasing", row.playerId === drama.trailerId ? "is-trailing" : null)}
             key={row.playerId}
             style={{ "--runner-left": `${row.left}%`, "--runner-top": `${42 + row.lane * 34}%` } as CSSProperties}
           >
             <div className="pixel-name-tag">{row.displayName}</div>
+            {drama.mode === "close" && row.playerId === drama.trailerId ? <div className="pixel-var-board">VAR</div> : null}
             <PixelAvatar row={row} size="large" />
           </div>
         ))}
       </div>
     </div>
   );
+}
+
+function getBallStyle(stats: Array<DashboardStats & { lane: number; left: number }>, drama: DramaState) {
+  if (drama.mode === "tie") {
+    return { "--ball-left": "50%", "--ball-top": "67%" } as CSSProperties;
+  }
+  if (drama.mode === "close") {
+    return { "--ball-left": "68%", "--ball-top": "58%" } as CSSProperties;
+  }
+  const leader = stats.find((row) => row.playerId === drama.leaderId);
+  if (leader) {
+    return { "--ball-left": `${Math.max(12, leader.left - 5)}%`, "--ball-top": `${50 + leader.lane * 28}%` } as CSSProperties;
+  }
+  return { "--ball-left": "50%", "--ball-top": "67%" } as CSSProperties;
 }
 
 function PixelAvatar({ row, size }: { row: DashboardStats; size: "small" | "large" }) {
@@ -427,20 +467,40 @@ function PixelAvatar({ row, size }: { row: DashboardStats; size: "small" | "larg
   );
 }
 
-function buildDramaLine(stats: DashboardStats[]) {
+function buildDramaState(stats: DashboardStats[]): DramaState {
   if (stats.length < 2) {
-    return "小剧场还在搭台，等第一场结算后开演。";
+    return {
+      line: "小剧场还在搭台，等第一场结算后开演。",
+      mode: "empty",
+      leaderId: null,
+      trailerId: null,
+    };
   }
 
   const [leader, trailer] = [...stats].sort((a, b) => b.netAmount - a.netAmount || b.points - a.points);
   const gap = leader.netAmount - trailer.netAmount;
   if (gap === 0) {
-    return "两人还在中场拉扯，下一场决定谁先破门。";
+    return {
+      line: "两人还在中场拉扯，下一场决定谁先破门。",
+      mode: "tie",
+      leaderId: null,
+      trailerId: null,
+    };
   }
   if (gap >= 20) {
-    return `${leader.displayName}正在带球狂奔，${trailer.displayName}准备在补时阶段抢回一球。`;
+    return {
+      line: `${leader.displayName}正在带球狂奔，${trailer.displayName}准备在补时阶段抢回一球。`,
+      mode: "breakaway",
+      leaderId: leader.playerId,
+      trailerId: trailer.playerId,
+    };
   }
-  return `${leader.displayName}已经冲到禁区，${trailer.displayName}正在申请 VAR。`;
+  return {
+    line: `${leader.displayName}已经冲到禁区，${trailer.displayName}正在申请 VAR。`,
+    mode: "close",
+    leaderId: leader.playerId,
+    trailerId: trailer.playerId,
+  };
 }
 
 function getBeijingDateKey(value: string | Date) {
