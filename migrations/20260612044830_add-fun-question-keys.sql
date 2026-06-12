@@ -1,0 +1,15 @@
+alter type public.fun_question_key add value if not exists 'total_goals_2_plus';
+alter type public.fun_question_key add value if not exists 'total_goals_4_plus';
+alter type public.fun_question_key add value if not exists 'clean_sheet';
+alter type public.fun_question_key add value if not exists 'home_team_score';
+alter type public.fun_question_key add value if not exists 'away_team_score';
+alter type public.fun_question_key add value if not exists 'first_half_2_plus';
+alter type public.fun_question_key add value if not exists 'second_half_goal';
+alter type public.fun_question_key add value if not exists 'draw_at_half_time';
+alter type public.fun_question_key add value if not exists 'one_goal_margin';
+alter type public.fun_question_key add value if not exists 'home_wins_first_half';
+alter type public.fun_question_key add value if not exists 'away_wins_first_half';
+alter type public.fun_question_key add value if not exists 'comeback_win';
+alter type public.fun_question_key add value if not exists 'late_goal_after_75';
+alter type public.fun_question_key add value if not exists 'own_goal';
+alter type public.fun_question_key add value if not exists 'yellow_cards_4_plus';

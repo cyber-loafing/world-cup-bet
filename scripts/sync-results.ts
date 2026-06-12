@@ -44,6 +44,7 @@ type ApiFixture = {
 };
 
 type ApiEvent = {
+  time?: { elapsed?: number | null; extra?: number | null };
   type: string;
   detail: string;
 };
@@ -101,6 +102,12 @@ type DbSyncRun = {
   status: string;
 };
 
+type DbMatchQuestion = {
+  id: string;
+  match_number: number;
+  fun_question_key: FunQuestionKey;
+};
+
 async function main() {
   const decision = await getSyncDecision();
   if (!decision.shouldSync) {
@@ -113,11 +120,13 @@ async function main() {
   try {
     const { fixtures, source, note } = await fetchFixtures();
     const sortedFixtures = fixtures.sort((a, b) => new Date(a.fixture.date).getTime() - new Date(b.fixture.date).getTime());
+    const preservedFunQuestions = await loadPredictedMatchFunQuestions();
     const upsertedMatches: Match[] = [];
 
     for (const [index, fixture] of sortedFixtures.entries()) {
       const events = fixture.fixture.id > 0 && isFinished(fixture) ? await fetchEvents(fixture.fixture.id) : [];
-      const match = await upsertMatch(fixture, index + 1, events);
+      const matchNumber = index + 1;
+      const match = await upsertMatch(fixture, matchNumber, events, preservedFunQuestions[matchNumber]);
       upsertedMatches.push(match);
     }
 
@@ -315,8 +324,34 @@ function mergeApiFootballFixtures(fallbackFixtures: ApiFixture[], apiFixtures: A
   });
 }
 
-async function upsertMatch(fixture: ApiFixture, matchNumber: number, events: ApiEvent[]): Promise<Match> {
-  const funQuestionKey = chooseFunQuestion(fixture.fixture.id);
+async function loadPredictedMatchFunQuestions(): Promise<Record<number, FunQuestionKey>> {
+  const { data: matchesData, error: matchesError } = await insforge.database
+    .from("matches")
+    .select("id, match_number, fun_question_key");
+  if (matchesError) {
+    throw matchesError;
+  }
+
+  const { data: predictionsData, error: predictionsError } = await insforge.database.from("predictions").select("match_id");
+  if (predictionsError) {
+    throw predictionsError;
+  }
+
+  const predictedMatchIds = new Set((predictionsData as Array<{ match_id: string }>).map((prediction) => prediction.match_id));
+  return Object.fromEntries(
+    (matchesData as DbMatchQuestion[])
+      .filter((match) => predictedMatchIds.has(match.id))
+      .map((match) => [Number(match.match_number), match.fun_question_key]),
+  );
+}
+
+async function upsertMatch(
+  fixture: ApiFixture,
+  matchNumber: number,
+  events: ApiEvent[],
+  preservedFunQuestionKey?: FunQuestionKey,
+): Promise<Match> {
+  const funQuestionKey = preservedFunQuestionKey ?? chooseFunQuestion(matchNumber);
   const eventFacts = summarizeEvents(events);
   const row = {
     api_football_fixture_id: fixture.fixture.id > 0 ? fixture.fixture.id : null,
@@ -434,8 +469,8 @@ function isFinished(fixture: ApiFixture) {
   return ["FT", "AET", "PEN"].includes(fixture.fixture.status.short);
 }
 
-function chooseFunQuestion(fixtureId: number): FunQuestionKey {
-  return funQuestionOptions[Math.abs(fixtureId) % funQuestionOptions.length].value;
+function chooseFunQuestion(matchNumber: number): FunQuestionKey {
+  return funQuestionOptions[(Math.max(matchNumber, 1) - 1) % funQuestionOptions.length].value;
 }
 
 function parseOpenFootballKickoff(date: string, time: string | undefined) {
@@ -476,8 +511,11 @@ function formatApiFootballErrors(errors: unknown) {
 
 function summarizeEvents(events: ApiEvent[]) {
   return {
-    redCards: events.filter((event) => event.type === "Card" && /red/i.test(event.detail)).length,
+    redCards: events.filter((event) => event.type === "Card" && /red|second yellow/i.test(event.detail)).length,
     penaltyGoals: events.filter((event) => event.type === "Goal" && /penalty/i.test(event.detail)).length,
+    lateGoalsAfter75: events.filter((event) => event.type === "Goal" && Number(event.time?.elapsed ?? 0) >= 75).length,
+    ownGoals: events.filter((event) => event.type === "Goal" && /own/i.test(event.detail)).length,
+    yellowCards: events.filter((event) => event.type === "Card" && /yellow/i.test(event.detail)).length,
   };
 }
 
@@ -490,11 +528,52 @@ function answerFunQuestion(
   const away = fixture.score.fulltime.away ?? fixture.goals.away ?? 0;
   const halfHome = fixture.score.halftime.home ?? 0;
   const halfAway = fixture.score.halftime.away ?? 0;
-  if (key === "total_goals_3_plus") return home + away >= 3;
-  if (key === "both_teams_score") return home > 0 && away > 0;
-  if (key === "first_half_goal") return halfHome + halfAway > 0;
-  if (key === "red_card") return facts.redCards > 0;
-  return facts.penaltyGoals > 0;
+  const totalGoals = home + away;
+  const firstHalfGoals = halfHome + halfAway;
+  const secondHalfGoals = totalGoals - firstHalfGoals;
+
+  switch (key) {
+    case "total_goals_2_plus":
+      return totalGoals >= 2;
+    case "total_goals_3_plus":
+      return totalGoals >= 3;
+    case "total_goals_4_plus":
+      return totalGoals >= 4;
+    case "both_teams_score":
+      return home > 0 && away > 0;
+    case "clean_sheet":
+      return home === 0 || away === 0;
+    case "home_team_score":
+      return home > 0;
+    case "away_team_score":
+      return away > 0;
+    case "first_half_goal":
+      return firstHalfGoals > 0;
+    case "first_half_2_plus":
+      return firstHalfGoals >= 2;
+    case "second_half_goal":
+      return secondHalfGoals > 0;
+    case "draw_at_half_time":
+      return halfHome === halfAway;
+    case "one_goal_margin":
+      return Math.abs(home - away) === 1;
+    case "home_wins_first_half":
+      return halfHome > halfAway;
+    case "away_wins_first_half":
+      return halfAway > halfHome;
+    case "comeback_win":
+      return (halfHome > halfAway && home < away) || (halfAway > halfHome && away < home);
+    case "red_card":
+      return facts.redCards > 0;
+    case "penalty_goal":
+      return facts.penaltyGoals > 0;
+    case "late_goal_after_75":
+      return facts.lateGoalsAfter75 > 0;
+    case "own_goal":
+      return facts.ownGoals > 0;
+    case "yellow_cards_4_plus":
+      return facts.yellowCards >= 4;
+  }
 }
 
 async function createSyncRun() {

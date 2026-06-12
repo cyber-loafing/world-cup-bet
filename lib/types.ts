@@ -14,11 +14,26 @@ export type MatchStatus = "scheduled" | "live" | "finished" | "postponed" | "can
 export type PickResult = "home" | "draw" | "away";
 
 export type FunQuestionKey =
+  | "total_goals_2_plus"
   | "total_goals_3_plus"
+  | "total_goals_4_plus"
   | "both_teams_score"
+  | "clean_sheet"
+  | "home_team_score"
+  | "away_team_score"
   | "first_half_goal"
+  | "first_half_2_plus"
+  | "second_half_goal"
+  | "draw_at_half_time"
+  | "one_goal_margin"
+  | "home_wins_first_half"
+  | "away_wins_first_half"
+  | "comeback_win"
   | "red_card"
-  | "penalty_goal";
+  | "penalty_goal"
+  | "late_goal_after_75"
+  | "own_goal"
+  | "yellow_cards_4_plus";
 
 export type Match = {
   id: string;
