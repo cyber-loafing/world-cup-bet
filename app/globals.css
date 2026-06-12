@@ -70,6 +70,116 @@ select {
   line-height: 1;
 }
 
+.pixel-calendar {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.42) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.4) 1px, transparent 1px),
+    rgba(255, 255, 255, 0.88);
+  background-size: 16px 16px;
+}
+
+.pixel-calendar-icon {
+  background: #ffd84d;
+  height: 28px;
+  image-rendering: pixelated;
+  position: relative;
+  width: 28px;
+}
+
+.pixel-calendar-icon.has-match {
+  background: #ff6b5f;
+  box-shadow:
+    -10px 0 #17211c,
+    -10px 8px #17211c,
+    -10px 16px #17211c,
+    0 8px #ffffff,
+    10px 8px #ffffff;
+}
+
+.pixel-calendar-icon.is-rest {
+  box-shadow:
+    8px 0 #ffd84d,
+    -8px 0 #ffd84d,
+    0 8px #ffd84d,
+    0 -8px #ffd84d,
+    6px 6px #ffe98a,
+    -6px -6px #ffe98a;
+}
+
+.pixel-calendar-row {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(23, 33, 28, 0.1);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: auto 1fr auto;
+  padding: 0.75rem;
+}
+
+.pixel-flag {
+  background: #ff6b5f;
+  box-shadow:
+    -6px 0 #17211c,
+    -6px 8px #17211c,
+    -6px 16px #17211c,
+    8px 0 #ffffff;
+  height: 16px;
+  width: 18px;
+}
+
+.ledger-title-card {
+  background:
+    linear-gradient(135deg, rgba(223, 246, 233, 0.78), rgba(255, 247, 221, 0.76)),
+    rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(23, 33, 28, 0.1);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.ledger-badge {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(23, 33, 28, 0.12);
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 0.35rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 900;
+}
+
+.ledger-badge-mark {
+  background: #f3b33d;
+  box-shadow:
+    4px 0 #f3b33d,
+    0 4px #f3b33d,
+    4px 4px #ff6b5f;
+  height: 6px;
+  width: 6px;
+}
+
+.ledger-score-row {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(23, 33, 28, 0.08);
+  border-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+  padding: 0.45rem 0.6rem;
+}
+
+.ledger-score-row span {
+  color: rgba(23, 33, 28, 0.62);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.ledger-score-row strong {
+  color: #17211c;
+  font-weight: 950;
+}
+
 .pixel-track {
   background:
     linear-gradient(180deg, rgba(135, 219, 255, 0.7) 0 42%, transparent 42%),

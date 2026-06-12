@@ -259,6 +259,8 @@ function Dashboard({
   const runnerStats = normalizeRunnerStats(stats);
   const gap = stats.length > 1 ? Math.abs(stats[0].netAmount - stats[1].netAmount) : 0;
   const headline = leader && gap > 0 ? `${leader.displayName} 暂时领先 ${gap}r` : "现在打成平手";
+  const todayMatches = matches.filter((match) => getBeijingDateKey(match.kickoffAt) === getBeijingDateKey(new Date()));
+  const dramaLine = buildDramaLine(stats);
 
   return (
     <section className="grid gap-4">
@@ -283,6 +285,11 @@ function Dashboard({
         </div>
       </div>
 
+      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <DramaCard line={dramaLine} />
+        <TodayCalendar matches={todayMatches} />
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
           <p className="text-sm font-bold text-grass">下一场</p>
@@ -303,6 +310,53 @@ function Dashboard({
         </div>
       </div>
     </section>
+  );
+}
+
+function DramaCard({ line }: { line: string }) {
+  return (
+    <div className="rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
+      <p className="text-sm font-bold text-coral">今日小剧场</p>
+      <p className="mt-3 text-2xl font-black leading-snug text-ink">{line}</p>
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-mint">
+        <div className="h-full w-2/3 rounded-full bg-coral/80" />
+      </div>
+    </div>
+  );
+}
+
+function TodayCalendar({ matches }: { matches: Match[] }) {
+  const sortedMatches = [...matches].sort((a, b) => new Date(a.kickoffAt).getTime() - new Date(b.kickoffAt).getTime());
+
+  return (
+    <div className="pixel-calendar rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-grass">今日赛程</p>
+          <h3 className="text-2xl font-black text-ink">世界杯像素日历</h3>
+        </div>
+        <div className={clsx("pixel-calendar-icon", sortedMatches.length > 0 ? "has-match" : "is-rest")} aria-hidden="true" />
+      </div>
+      {sortedMatches.length > 0 ? (
+        <div className="mt-4 grid gap-2">
+          {sortedMatches.slice(0, 5).map((match) => (
+            <div className="pixel-calendar-row" key={match.id}>
+              <span className="pixel-flag" aria-hidden="true" />
+              <div>
+                <p className="font-black">{match.homeTeam} vs {match.awayTeam}</p>
+                <p className="text-sm font-bold text-ink/55">{formatBeijingClock(match.kickoffAt)} · {stageLabel(match.stage)}</p>
+              </div>
+              <StatusPill match={match} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4 rounded-md bg-gold/20 p-4 ring-1 ring-gold/30">
+          <p className="font-black">今天没有比赛，适合养精蓄锐。</p>
+          <p className="mt-1 text-sm font-bold text-ink/60">下一次开球前，先攒一点玄学能量。</p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -371,6 +425,44 @@ function PixelAvatar({ row, size }: { row: DashboardStats; size: "small" | "larg
       <span className="pixel-leg pixel-leg-right" />
     </div>
   );
+}
+
+function buildDramaLine(stats: DashboardStats[]) {
+  if (stats.length < 2) {
+    return "小剧场还在搭台，等第一场结算后开演。";
+  }
+
+  const [leader, trailer] = [...stats].sort((a, b) => b.netAmount - a.netAmount || b.points - a.points);
+  const gap = leader.netAmount - trailer.netAmount;
+  if (gap === 0) {
+    return "两人还在中场拉扯，下一场决定谁先破门。";
+  }
+  if (gap >= 20) {
+    return `${leader.displayName}正在带球狂奔，${trailer.displayName}准备在补时阶段抢回一球。`;
+  }
+  return `${leader.displayName}已经冲到禁区，${trailer.displayName}正在申请 VAR。`;
+}
+
+function getBeijingDateKey(value: string | Date) {
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "00";
+  const day = parts.find((part) => part.type === "day")?.value ?? "00";
+  return `${year}-${month}-${day}`;
+}
+
+function formatBeijingClock(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
 }
 
 function MatchesView({
@@ -666,33 +758,165 @@ function LedgerView({ matches, players, settlements }: { matches: Match[]; playe
   const rows = matches
     .map((match) => ({ match, settlements: settlements.filter((item) => item.matchId === match.id) }))
     .filter((row) => row.settlements.length > 0);
+  const badgeSummaries = buildBadgeSummaries(players, matches, settlements);
+
   return (
-    <section className="rounded-lg bg-white/88 p-4 shadow-soft ring-1 ring-ink/10">
-      <h2 className="mb-4 text-xl font-black">结算账本</h2>
-      <div className="grid gap-3">
-        {rows.map(({ match, settlements: matchSettlements }) => (
-          <div className="rounded-md bg-white p-3 ring-1 ring-ink/10" key={match.id}>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <p className="font-black">#{match.matchNumber} {match.homeTeam} {match.homeScore90}-{match.awayScore90} {match.awayTeam}</p>
-              <span className="text-sm font-bold text-ink/60">{stageLabel(match.stage)}</span>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {players.map((player) => {
-                const settlement = matchSettlements.find((item) => item.playerId === player.id);
-                return (
-                  <div className="rounded-md bg-mint/40 px-3 py-2" key={player.id}>
-                    <span className="font-bold">{player.displayName}</span>
-                    <span className="float-right font-black">{settlement ? `${settlement.points} 分 · ${formatMoney(settlement.netAmount)}` : "未结算"}</span>
-                  </div>
-                );
-              })}
-            </div>
+    <section className="grid gap-4">
+      <div className="rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-coral">情侣称号</p>
+            <h2 className="text-2xl font-black text-ink">本届世界杯身份牌</h2>
           </div>
-        ))}
-        {rows.length === 0 ? <p className="font-bold text-ink/60">暂无已结算比赛。</p> : null}
+          <span className="rounded-full bg-mint px-3 py-1 text-sm font-black text-ink ring-1 ring-grass/20">动态生成</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {badgeSummaries.map((summary) => (
+            <div className="ledger-title-card" key={summary.player.id}>
+              <div className="flex items-center gap-3">
+                <PixelAvatar row={summary.stat} size="small" />
+                <div>
+                  <p className="text-sm font-bold text-ink/55">{summary.player.displayName}</p>
+                  <h3 className="text-2xl font-black text-ink">{summary.primaryTitle}</h3>
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {summary.badges.map((badge) => (
+                  <span className="ledger-badge" key={badge.name}>
+                    <span className="ledger-badge-mark" aria-hidden="true" />
+                    {badge.name}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-3 text-sm font-bold leading-6 text-ink/60">{summary.note}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-white/88 p-4 shadow-soft ring-1 ring-ink/10">
+        <h2 className="mb-4 text-xl font-black">结算账本</h2>
+        <div className="grid gap-3">
+          {rows.map(({ match, settlements: matchSettlements }) => (
+            <div className="rounded-md bg-white p-3 ring-1 ring-ink/10" key={match.id}>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="font-black">#{match.matchNumber} {match.homeTeam} {match.homeScore90}-{match.awayScore90} {match.awayTeam}</p>
+                  <p className="text-sm font-bold text-ink/55">{stageLabel(match.stage)} · {formatFullBeijingTime(match.kickoffAt)}</p>
+                </div>
+                <span className="rounded-full bg-ink px-3 py-1 text-sm font-black text-white">{matchStatusText(match)}</span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {players.map((player) => {
+                  const settlement = matchSettlements.find((item) => item.playerId === player.id);
+                  return <SettlementDetail key={player.id} player={player} settlement={settlement} />;
+                })}
+              </div>
+            </div>
+          ))}
+          {rows.length === 0 ? <p className="font-bold text-ink/60">暂无已结算比赛。</p> : null}
+        </div>
       </div>
     </section>
   );
+}
+
+function SettlementDetail({ player, settlement }: { player: Player; settlement: Settlement | undefined }) {
+  if (!settlement) {
+    return (
+      <div className="rounded-md bg-mint/35 p-3 ring-1 ring-ink/10">
+        <p className="font-black" style={{ color: player.avatarColor }}>{player.displayName}</p>
+        <p className="mt-2 text-sm font-bold text-ink/55">未结算</p>
+      </div>
+    );
+  }
+
+  const detailRows = [
+    { label: "胜平负", value: settlement.resultPoints, suffix: "分" },
+    { label: "比分", value: settlement.scorePoints, suffix: "分" },
+    { label: "趣味题", value: settlement.funPoints, suffix: "分" },
+    { label: "晋级", value: settlement.advancePoints, suffix: "分" },
+    { label: "精确比分奖励", value: settlement.exactScoreBonus, suffix: "r" },
+  ];
+
+  return (
+    <div className="rounded-md bg-mint/35 p-3 ring-1 ring-ink/10">
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-black" style={{ color: player.avatarColor }}>{player.displayName}</p>
+        <span className="font-black">{settlement.points} 分 · {formatMoney(settlement.netAmount)}</span>
+      </div>
+      <div className="mt-3 grid gap-2">
+        {detailRows.map(({ label, value, suffix }) => (
+          <div className="ledger-score-row" key={label}>
+            <span>{label}</span>
+            <strong>{value > 0 ? `+${value}${suffix}` : `0${suffix}`}</strong>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-xs font-bold text-ink/45">结算时间 {formatFullBeijingTime(settlement.settledAt)}</p>
+    </div>
+  );
+}
+
+type LedgerBadge = {
+  name: string;
+  note: string;
+  priority: number;
+};
+
+function buildBadgeSummaries(players: Player[], matches: Match[], settlements: Settlement[]) {
+  const stats = buildStats(players, settlements);
+  const highestNet = Math.max(...stats.map((stat) => stat.netAmount), 0);
+  const highestFunHits = Math.max(...stats.map((stat) => stat.funHits), 0);
+  const matchById = Object.fromEntries(matches.map((match) => [match.id, match]));
+
+  return players.map((player) => {
+    const ownSettlements = settlements.filter((settlement) => settlement.playerId === player.id);
+    const stat = stats.find((item) => item.playerId === player.id) ?? {
+      playerId: player.id,
+      code: player.code,
+      displayName: player.displayName,
+      avatarColor: player.avatarColor,
+      points: 0,
+      netAmount: 0,
+      exactScores: 0,
+      funHits: 0,
+      streakBadges: 0,
+    };
+    const resultPoints = ownSettlements.reduce((sum, settlement) => sum + settlement.resultPoints, 0);
+    const scoreNearHits = ownSettlements.filter((settlement) => settlement.scorePoints > 0 && settlement.exactScoreBonus === 0).length;
+    const penaltyQuestionHits = ownSettlements.filter((settlement) => matchById[settlement.matchId]?.funQuestionKey === "penalty_goal" && settlement.funPoints > 0).length;
+    const firstSettlement = [...ownSettlements].sort((a, b) => new Date(a.settledAt).getTime() - new Date(b.settledAt).getTime())[0];
+    const badges: LedgerBadge[] = [];
+
+    if (stat.exactScores > 0) badges.push({ name: "比分预言家", note: "精确比分已经被你抓到过。", priority: 100 });
+    if (stat.funHits > 0 && stat.funHits === highestFunHits) badges.push({ name: "玄学大师", note: "趣味题命中率正在发光。", priority: 95 });
+    if (stat.netAmount < 0) badges.push({ name: "反向球王", note: "方向感很浪漫，账本很诚实。", priority: 88 });
+    if (penaltyQuestionHits > 0) badges.push({ name: "点球猎人", note: "点球相关判断已经开张。", priority: 84 });
+    if (scoreNearHits > 0) badges.push({ name: "补时心碎者", note: "比分擦边命中，离精确只差一点点。", priority: 80 });
+    if (stat.netAmount > 0 && stat.netAmount === highestNet) badges.push({ name: "净赢领跑者", note: "小金库暂时跑在前面。", priority: 76 });
+    if (resultPoints >= 4) badges.push({ name: "稳胆专家", note: "胜平负基本盘很稳。", priority: 72 });
+    if (ownSettlements.some((settlement) => settlement.scorePoints > 0)) badges.push({ name: "火眼金睛", note: "比分走势有被你看穿。", priority: 68 });
+    if (stat.streakBadges > 0) badges.push({ name: "连胜小火苗", note: "三连胜徽章已经点燃。", priority: 64 });
+    if (ownSettlements.some((settlement) => settlement.advancePoints > 0)) badges.push({ name: "淘汰赛导演", note: "晋级剧本猜中了。", priority: 60 });
+    if (firstSettlement && firstSettlement.netAmount > 0) badges.push({ name: "开门红", note: "第一笔结算就带着胜利入场。", priority: 56 });
+    if (ownSettlements.length > 0 && badges.length === 0) badges.push({ name: "快乐热身中", note: "称号池正在等待高光时刻。", priority: 1 });
+    if (ownSettlements.length === 0) badges.push({ name: "等待开球", note: "第一场结算后称号就会出现。", priority: 1 });
+
+    const sortedBadges = badges.sort((a, b) => b.priority - a.priority);
+    const primaryTitle = sortedBadges[0]?.name ?? "等待开球";
+    const supportingBadges = sortedBadges
+      .filter((badge) => badge.name !== primaryTitle)
+      .slice(0, 6);
+
+    return {
+      player,
+      stat,
+      primaryTitle,
+      badges: supportingBadges.length > 0 ? supportingBadges : [{ name: "待解锁新徽章", note: "下一场可能就来了。", priority: 0 }],
+      note: sortedBadges[0]?.note ?? "第一场结算后称号就会出现。",
+    };
+  });
 }
 
 function LeaderboardView({ stats }: { stats: DashboardStats[] }) {
@@ -744,13 +968,20 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function StatusPill({ match }: { match: Match }) {
-  const label = match.status === "finished" ? "已完赛" : match.status === "live" ? "进行中" : "未开始";
   return (
     <span className="inline-flex w-fit items-center gap-2 rounded-full bg-ink px-3 py-1 text-sm font-black text-white">
       <CircleDollarSign size={15} />
-      {label}
+      {matchStatusText(match)}
     </span>
   );
+}
+
+function matchStatusText(match: Match) {
+  if (match.status === "finished") return "已完赛";
+  if (match.status === "live") return "进行中";
+  if (match.status === "postponed") return "延期";
+  if (match.status === "cancelled") return "取消";
+  return "未开始";
 }
 
 function buildStats(players: Player[], settlements: Settlement[]): DashboardStats[] {
