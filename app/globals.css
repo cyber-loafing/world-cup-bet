@@ -638,6 +638,11 @@ select {
   top: 38%;
 }
 
+.pixel-track.pixel-track-generated::before,
+.pixel-track.pixel-track-generated::after {
+  content: none;
+}
+
 .pixel-sun {
   background: #ffd84d;
   box-shadow:
