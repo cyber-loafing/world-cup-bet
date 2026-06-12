@@ -504,19 +504,9 @@ function PixelRace({ stats, drama }: { stats: Array<DashboardStats & { lane: num
           </div>
         ))}
       </div>
-      <div className={clsx("pixel-track", `drama-${drama.mode}`)} aria-hidden="true">
-        <div className="pixel-sun" />
-        <div className="pixel-cloud pixel-cloud-one" />
-        <div className="pixel-cloud pixel-cloud-two" />
-        <div className="pixel-stand pixel-stand-left" />
-        <div className="pixel-stand pixel-stand-right" />
-        <div className="pixel-goal pixel-goal-left" />
-        <div className="pixel-goal pixel-goal-right" />
-        <div className="pixel-field-line pixel-half-line" />
-        <div className="pixel-field-line pixel-box-left" />
-        <div className="pixel-field-line pixel-box-right" />
-        <div className="pixel-center-circle" />
-        <div className="pixel-ball" style={ballStyle} />
+      <div className={clsx("pixel-track pixel-track-generated", `drama-${drama.mode}`)} aria-hidden="true">
+        <div className="pixel-field-vignette" />
+        <div className="pixel-ball-sprite" style={ballStyle} />
         {stats.map((row) => (
           <div
             className={clsx("pixel-runner", row.playerId === drama.leaderId ? "is-leading" : "is-chasing", row.playerId === drama.trailerId ? "is-trailing" : null)}
@@ -525,7 +515,7 @@ function PixelRace({ stats, drama }: { stats: Array<DashboardStats & { lane: num
           >
             <div className="pixel-name-tag">{row.displayName}</div>
             {drama.mode === "close" && row.playerId === drama.trailerId ? <div className="pixel-var-board">VAR</div> : null}
-            <PixelAvatar row={row} size="large" />
+            <div className={clsx("runner-sprite", row.code === "player_a" ? "runner-sprite-bb" : "runner-sprite-jm")} />
           </div>
         ))}
       </div>

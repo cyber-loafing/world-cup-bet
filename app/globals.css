@@ -584,6 +584,30 @@ select {
   position: relative;
 }
 
+.pixel-track-generated {
+  background: #5fcb5f url("/assets/pixel/world-cup-field.png") center / cover no-repeat;
+  box-shadow:
+    inset 0 -18px rgba(23, 33, 28, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+  height: 260px;
+  image-rendering: pixelated;
+}
+
+.pixel-track-generated::before,
+.pixel-track-generated::after {
+  content: none;
+}
+
+.pixel-field-vignette {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 35%),
+    linear-gradient(0deg, rgba(23, 33, 28, 0.18), transparent 32%);
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+
 .pixel-track::before,
 .pixel-track::after {
   content: "";
@@ -667,6 +691,20 @@ select {
   top: var(--ball-top, 67%);
   transform: translate(-50%, -50%);
   width: 24px;
+  z-index: 6;
+}
+
+.pixel-ball-sprite {
+  --sprite-shift: -136px;
+  animation: ball-sprite-roll 640ms steps(4) infinite;
+  background: url("/assets/pixel/ball-roll.png") 0 0 / 400% 100% no-repeat;
+  height: 34px;
+  image-rendering: pixelated;
+  left: var(--ball-left, 50%);
+  position: absolute;
+  top: var(--ball-top, 67%);
+  transform: translate(-50%, -50%);
+  width: 34px;
   z-index: 6;
 }
 
@@ -767,6 +805,35 @@ select {
   z-index: 7;
 }
 
+.runner-sprite {
+  --sprite-shift: -384px;
+  animation: runner-sprite-run 560ms steps(4) infinite;
+  background-position: 0 0;
+  background-repeat: no-repeat;
+  background-size: 400% 100%;
+  filter: drop-shadow(0 8px 0 rgba(23, 33, 28, 0.18));
+  height: 120px;
+  image-rendering: pixelated;
+  width: 96px;
+}
+
+.runner-sprite-bb {
+  background-image: url("/assets/pixel/beibei-run.png");
+}
+
+.runner-sprite-jm {
+  background-image: url("/assets/pixel/jiumei-run.png");
+}
+
+.pixel-runner.is-leading .runner-sprite {
+  animation-duration: 460ms;
+  filter: drop-shadow(0 8px 0 rgba(23, 33, 28, 0.18)) drop-shadow(0 0 12px rgba(255, 216, 77, 0.95));
+}
+
+.pixel-runner.is-chasing .runner-sprite {
+  animation-duration: 420ms;
+}
+
 .pixel-runner.is-leading .pixel-avatar {
   animation: pixel-run 520ms steps(2) infinite, pixel-leader-glow 1.4s ease-in-out infinite;
 }
@@ -785,6 +852,14 @@ select {
 
 .pixel-track.drama-breakaway .pixel-ball {
   animation: pixel-ball-roll 1.5s steps(8) infinite, pixel-dribble 700ms ease-in-out infinite;
+}
+
+.pixel-track.drama-close .pixel-ball-sprite {
+  animation: ball-sprite-roll 520ms steps(4) infinite, pixel-ball-pulse 760ms ease-in-out infinite;
+}
+
+.pixel-track.drama-breakaway .pixel-ball-sprite {
+  animation: ball-sprite-roll 480ms steps(4) infinite, pixel-dribble 700ms ease-in-out infinite;
 }
 
 .pixel-var-board {
@@ -973,6 +1048,15 @@ select {
   }
 }
 
+@keyframes runner-sprite-run {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: var(--sprite-shift) 0;
+  }
+}
+
 @keyframes pixel-chase {
   0%,
   100% {
@@ -999,6 +1083,15 @@ select {
   }
   100% {
     transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes ball-sprite-roll {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: var(--sprite-shift) 0;
   }
 }
 
