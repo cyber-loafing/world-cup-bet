@@ -90,7 +90,9 @@ export type LedgerRow = {
 
 export type DashboardStats = {
   playerId: string;
+  code: PlayerCode;
   displayName: string;
+  avatarColor: string;
   points: number;
   netAmount: number;
   exactScores: number;

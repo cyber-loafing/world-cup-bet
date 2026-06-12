@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
@@ -254,30 +255,121 @@ function Dashboard({
 }) {
   const finished = matches.filter((match) => match.status === "finished").length;
   const totalNet = settlements.reduce((sum, row) => sum + Math.max(row.netAmount, 0), 0);
+  const leader = stats[0] ?? null;
+  const runnerStats = normalizeRunnerStats(stats);
+  const gap = stats.length > 1 ? Math.abs(stats[0].netAmount - stats[1].netAmount) : 0;
+  const headline = leader && gap > 0 ? `${leader.displayName} 暂时领先 ${gap}r` : "现在打成平手";
+
   return (
-    <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-      <div className="rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
-        <p className="text-sm font-bold text-grass">下一场</p>
-        <h2 className="mt-2 text-3xl font-black">{nextMatch ? `${nextMatch.homeTeam} vs ${nextMatch.awayTeam}` : "等待赛程导入"}</h2>
-        {nextMatch ? (
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <Metric label="北京时间" value={formatFullBeijingTime(nextMatch.kickoffAt)} />
-            <Metric label="阶段" value={stageLabel(nextMatch.stage)} />
-            <Metric label="趣味题" value={funQuestions[nextMatch.funQuestionKey]} />
+    <section className="grid gap-4">
+      <div className="pixel-hero overflow-hidden rounded-lg p-5 shadow-soft ring-1 ring-ink/10 sm:p-6">
+        <div className="grid gap-5 lg:grid-cols-[1fr_0.85fr] lg:items-center">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-md bg-white/75 px-3 py-2 text-xs font-black uppercase text-ink/70 ring-1 ring-ink/10">
+              Pixel Derby
+            </div>
+            <h2 className="mt-4 text-3xl font-black text-ink sm:text-5xl">{headline}</h2>
+            <p className="mt-3 max-w-2xl text-base font-bold leading-7 text-ink/70">
+              今日战况亮起来了，下一场继续押上 10r。
+            </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <Metric label="已完赛" value={`${finished}/${matches.length}`} />
+              <Metric label="已结算流动" value={formatMoney(totalNet)} />
+              <Metric label="当前模式" value="标准 10r" />
+            </div>
           </div>
-        ) : null}
+
+          <PixelRace stats={runnerStats} leaderId={leader?.playerId ?? null} />
+        </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
-        <MetricCard label="已完赛" value={`${finished}/${matches.length}`} />
-        <MetricCard label="已结算流动" value={formatMoney(totalNet)} />
-        <MetricCard label="当前模式" value="标准 10r" />
-      </div>
-      <div className="grid gap-4 lg:col-span-2 sm:grid-cols-2">
-        {stats.map((row) => (
-          <PlayerStat key={row.playerId} row={row} />
-        ))}
+
+      <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+        <div className="rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
+          <p className="text-sm font-bold text-grass">下一场</p>
+          <h2 className="mt-2 text-3xl font-black">{nextMatch ? `${nextMatch.homeTeam} vs ${nextMatch.awayTeam}` : "等待赛程导入"}</h2>
+          {nextMatch ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Metric label="北京时间" value={formatFullBeijingTime(nextMatch.kickoffAt)} />
+              <Metric label="阶段" value={stageLabel(nextMatch.stage)} />
+              <Metric label="趣味题" value={funQuestions[nextMatch.funQuestionKey]} />
+            </div>
+          ) : null}
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          {stats.map((row) => (
+            <PlayerStat key={row.playerId} row={row} />
+          ))}
+        </div>
       </div>
     </section>
+  );
+}
+
+function normalizeRunnerStats(stats: DashboardStats[]) {
+  const sorted = [...stats].sort((a, b) => b.netAmount - a.netAmount || b.points - a.points);
+  if (sorted.length < 2) {
+    return sorted.map((row) => ({ ...row, lane: 0, left: 48 }));
+  }
+  const leaderAmount = sorted[0].netAmount;
+  const trailerAmount = sorted[sorted.length - 1].netAmount;
+  const spread = Math.max(1, leaderAmount - trailerAmount);
+  return sorted.map((row, index) => ({
+    ...row,
+    lane: index,
+    left: Math.min(72, Math.max(18, 22 + ((row.netAmount - trailerAmount) / spread) * 50)),
+  }));
+}
+
+function PixelRace({ stats, leaderId }: { stats: Array<DashboardStats & { lane: number; left: number }>; leaderId: string | null }) {
+  return (
+    <div className="pixel-race" aria-label="情侣竞猜像素追逐动画">
+      <div className="pixel-scoreboard">
+        {stats.map((row) => (
+          <div className="pixel-score" key={row.playerId}>
+            <PixelAvatar row={row} size="small" />
+            <span>{row.displayName}</span>
+            <strong>{formatMoney(row.netAmount)}</strong>
+          </div>
+        ))}
+      </div>
+      <div className="pixel-track" aria-hidden="true">
+        <div className="pixel-sun" />
+        <div className="pixel-cloud pixel-cloud-one" />
+        <div className="pixel-cloud pixel-cloud-two" />
+        <div className="pixel-ball" />
+        {stats.map((row) => (
+          <div
+            className={clsx("pixel-runner", row.playerId === leaderId ? "is-leading" : "is-chasing")}
+            key={row.playerId}
+            style={{ "--runner-left": `${row.left}%`, "--runner-top": `${42 + row.lane * 34}%` } as CSSProperties}
+          >
+            <div className="pixel-name-tag">{row.displayName}</div>
+            <PixelAvatar row={row} size="large" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PixelAvatar({ row, size }: { row: DashboardStats; size: "small" | "large" }) {
+  return (
+    <div
+      className={clsx("pixel-avatar", `pixel-avatar-${size}`, row.code === "player_a" ? "pixel-avatar-bb" : "pixel-avatar-jm")}
+      style={{ "--avatar-color": row.avatarColor } as CSSProperties}
+      title={row.displayName}
+    >
+      <span className="pixel-hair" />
+      <span className="pixel-face" />
+      <span className="pixel-eye pixel-eye-left" />
+      <span className="pixel-eye pixel-eye-right" />
+      <span className="pixel-cheek pixel-cheek-left" />
+      <span className="pixel-cheek pixel-cheek-right" />
+      <span className="pixel-shirt" />
+      <span className="pixel-leg pixel-leg-left" />
+      <span className="pixel-leg pixel-leg-right" />
+    </div>
   );
 }
 
@@ -625,22 +717,19 @@ function LeaderboardView({ stats }: { stats: DashboardStats[] }) {
 function PlayerStat({ row }: { row: DashboardStats }) {
   return (
     <div className="rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
-      <p className="text-sm font-bold text-grass">玩家</p>
-      <h2 className="text-2xl font-black">{row.displayName}</h2>
+      <div className="flex items-center gap-3">
+        <PixelAvatar row={row} size="small" />
+        <div>
+          <p className="text-sm font-bold text-grass">玩家</p>
+          <h2 className="text-2xl font-black">{row.displayName}</h2>
+        </div>
+      </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
         <Metric label="累计积分" value={`${row.points}`} />
         <Metric label="累计净赢" value={formatMoney(row.netAmount)} />
         <Metric label="精确比分" value={`${row.exactScores}`} />
         <Metric label="趣味题命中" value={`${row.funHits}`} />
       </div>
-    </div>
-  );
-}
-
-function MetricCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg bg-white/88 p-4 shadow-soft ring-1 ring-ink/10">
-      <Metric label={label} value={value} />
     </div>
   );
 }
@@ -670,7 +759,9 @@ function buildStats(players: Player[], settlements: Settlement[]): DashboardStat
       const own = settlements.filter((settlement) => settlement.playerId === player.id);
       return {
         playerId: player.id,
+        code: player.code,
         displayName: player.displayName,
+        avatarColor: player.avatarColor,
         points: own.reduce((sum, settlement) => sum + settlement.points, 0),
         netAmount: own.reduce((sum, settlement) => sum + settlement.netAmount, 0),
         exactScores: own.filter((settlement) => settlement.exactScoreBonus > 0).length,
