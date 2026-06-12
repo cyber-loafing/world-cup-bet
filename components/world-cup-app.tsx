@@ -5,6 +5,7 @@ import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
+  ChevronDown,
   CircleDollarSign,
   ClipboardList,
   Crown,
@@ -1098,6 +1099,7 @@ function LedgerView({
   predictions: Prediction[];
   settlements: Settlement[];
 }) {
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const rows = matches
     .map((match) => ({
       match,
@@ -1148,12 +1150,31 @@ function LedgerView({
             <p className="text-sm font-bold text-grass">徽章图鉴</p>
             <h2 className="text-2xl font-black text-ink">情侣称号收藏册</h2>
           </div>
-          <span className="inline-flex items-center gap-2 rounded-full bg-gold/25 px-3 py-1 text-sm font-black text-ink ring-1 ring-gold/35">
+          <button
+            aria-expanded={catalogOpen}
+            className="inline-flex items-center gap-2 rounded-full bg-gold/25 px-3 py-1 text-sm font-black text-ink ring-1 ring-gold/35 transition hover:bg-gold/35"
+            onClick={() => setCatalogOpen((open) => !open)}
+            type="button"
+          >
             <Medal size={15} />
-            可收藏
-          </span>
+            {catalogOpen ? "收起图鉴" : "展开图鉴"}
+            <ChevronDown className={clsx("transition-transform", catalogOpen ? "rotate-180" : null)} size={15} />
+          </button>
         </div>
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          {badgeCatalogs.map((catalog) => (
+            <div className="badge-catalog-summary" key={catalog.player.id}>
+              <div>
+                <p className="text-sm font-black" style={{ color: catalog.player.avatarColor }}>{catalog.player.displayName}</p>
+                <p className="text-xs font-bold text-ink/55">已解锁 {catalog.unlockedCount}/{catalog.items.length}</p>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-white/80 ring-1 ring-ink/10">
+                <div className="h-full rounded-full bg-grass" style={{ width: `${catalog.progress}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className={clsx("grid gap-4 lg:grid-cols-2", catalogOpen ? null : "hidden")}>
           {badgeCatalogs.map((catalog) => (
             <div className="badge-catalog-panel" key={catalog.player.id}>
               <div className="mb-4 flex items-center justify-between gap-3">
