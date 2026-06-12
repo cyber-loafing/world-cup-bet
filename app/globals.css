@@ -700,16 +700,16 @@ select {
 }
 
 .pixel-ball-sprite {
-  --sprite-shift: -136px;
-  animation: ball-sprite-roll 640ms steps(4) infinite;
-  background: url("/assets/pixel/ball-roll.png") 0 0 / 400% 100% no-repeat;
-  height: 34px;
+  --sprite-shift: -180px;
+  animation: ball-sprite-roll 660ms steps(6) infinite;
+  background: url("/assets/pixel/ball-roll.png") 0 0 / 600% 100% no-repeat;
+  height: 30px;
   image-rendering: pixelated;
   left: var(--ball-left, 50%);
   position: absolute;
   top: var(--ball-top, 67%);
   transform: translate(-50%, -50%);
-  width: 34px;
+  width: 30px;
   z-index: 6;
 }
 
@@ -811,15 +811,17 @@ select {
 }
 
 .runner-sprite {
-  --sprite-shift: -384px;
-  animation: runner-sprite-run 560ms steps(4) infinite;
+  --sprite-shift: -324px;
+  animation:
+    runner-sprite-run 660ms steps(6) infinite,
+    runner-sprite-hop 330ms steps(2) infinite;
   background-position: 0 0;
   background-repeat: no-repeat;
-  background-size: 400% 100%;
-  filter: drop-shadow(0 8px 0 rgba(23, 33, 28, 0.18));
-  height: 120px;
+  background-size: 600% 100%;
+  filter: drop-shadow(0 6px 0 rgba(23, 33, 28, 0.16));
+  height: 81px;
   image-rendering: pixelated;
-  width: 96px;
+  width: 54px;
 }
 
 .runner-sprite-bb {
@@ -831,12 +833,12 @@ select {
 }
 
 .pixel-runner.is-leading .runner-sprite {
-  animation-duration: 460ms;
-  filter: drop-shadow(0 8px 0 rgba(23, 33, 28, 0.18)) drop-shadow(0 0 12px rgba(255, 216, 77, 0.95));
+  animation-duration: 540ms, 270ms;
+  filter: drop-shadow(0 6px 0 rgba(23, 33, 28, 0.16)) drop-shadow(0 0 10px rgba(255, 216, 77, 0.9));
 }
 
 .pixel-runner.is-chasing .runner-sprite {
-  animation-duration: 420ms;
+  animation-duration: 500ms, 250ms;
 }
 
 .pixel-runner.is-leading .pixel-avatar {
@@ -860,11 +862,11 @@ select {
 }
 
 .pixel-track.drama-close .pixel-ball-sprite {
-  animation: ball-sprite-roll 520ms steps(4) infinite, pixel-ball-pulse 760ms ease-in-out infinite;
+  animation: ball-sprite-roll 520ms steps(6) infinite, pixel-ball-pulse 760ms ease-in-out infinite;
 }
 
 .pixel-track.drama-breakaway .pixel-ball-sprite {
-  animation: ball-sprite-roll 480ms steps(4) infinite, pixel-dribble 700ms ease-in-out infinite;
+  animation: ball-sprite-roll 480ms steps(6) infinite, pixel-dribble 700ms ease-in-out infinite;
 }
 
 .pixel-var-board {
@@ -1059,6 +1061,16 @@ select {
   }
   100% {
     background-position: var(--sprite-shift) 0;
+  }
+}
+
+@keyframes runner-sprite-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
   }
 }
 
