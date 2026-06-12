@@ -8,12 +8,16 @@ import {
   CircleDollarSign,
   ClipboardList,
   Crown,
+  Flag,
   Loader2,
   Lock,
   LogOut,
   Save,
   ShieldCheck,
+  Sparkles,
+  Timer,
   Trophy,
+  Users,
 } from "lucide-react";
 import clsx from "clsx";
 import {
@@ -163,7 +167,7 @@ export function WorldCupApp({ initialView }: { initialView: View }) {
           onSaved={refresh}
         />
       ) : null}
-      {view === "ledger" ? <LedgerView matches={state.matches} players={state.players} settlements={state.settlements} /> : null}
+      {view === "ledger" ? <LedgerView matches={state.matches} players={state.players} predictions={state.predictions} settlements={state.settlements} /> : null}
       {view === "leaderboard" ? <LeaderboardView stats={stats} /> : null}
     </main>
   );
@@ -619,25 +623,109 @@ function MatchDetail({
 }) {
   const ownPrediction = predictions.find((prediction) => prediction.playerId === currentPlayer?.id);
   const locked = isPredictionLocked(match, ownPrediction?.lockedAt ?? null);
+  const roomState = buildMatchRoomState(match, predictions, players.length);
+  const homeScore = match.homeScore90 === null ? "-" : `${match.homeScore90}`;
+  const awayScore = match.awayScore90 === null ? "-" : `${match.awayScore90}`;
 
   return (
-    <div>
-      <div className="flex flex-col gap-2 border-b border-ink/10 pb-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-sm font-bold text-grass">{stageLabel(match.stage)} · 北京时间 {formatFullBeijingTime(match.kickoffAt)}</p>
-          <h2 className="text-2xl font-black">{match.homeTeam} vs {match.awayTeam}</h2>
-          <p className="mt-1 text-sm font-semibold text-ink/65">{match.venue ?? "待定场馆"} · {funQuestions[match.funQuestionKey]}</p>
+    <div className="grid gap-4">
+      <div className="match-room overflow-hidden rounded-lg ring-1 ring-ink/10">
+        <div className="match-room-sky">
+          <div className="match-room-cloud match-room-cloud-one" />
+          <div className="match-room-cloud match-room-cloud-two" />
+          <div className="match-room-sun" />
         </div>
-        <StatusPill match={match} />
+        <div className="match-room-board">
+          <div>
+            <p className="text-sm font-black text-grass">#{match.matchNumber} {stageLabel(match.stage)} · 赛前小房间</p>
+            <h2 className="mt-1 text-2xl font-black text-ink sm:text-3xl">{match.homeTeam} vs {match.awayTeam}</h2>
+            <p className="mt-1 text-sm font-bold text-ink/60">{match.venue ?? "待定场馆"} · 北京时间 {formatFullBeijingTime(match.kickoffAt)}</p>
+          </div>
+          <StatusPill match={match} />
+        </div>
+        <div className="match-room-field">
+          <div className="match-room-score">
+            <span>{match.homeTeam}</span>
+            <strong>{homeScore} : {awayScore}</strong>
+            <span>{match.awayTeam}</span>
+          </div>
+          <div className="match-room-center" />
+          <div className="match-room-goal match-room-goal-left" />
+          <div className="match-room-goal match-room-goal-right" />
+        </div>
       </div>
-      <PredictionForm currentPlayer={currentPlayer} locked={locked} match={match} prediction={ownPrediction} onSaved={onSaved} />
-      <div className="mt-5 grid gap-3">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <RoomMetric icon={<Timer size={17} />} label="开球倒计时" value={roomState.countdown} />
+        <RoomMetric icon={<CircleDollarSign size={17} />} label="本场赌注" value="双方各 10r" />
+        <RoomMetric icon={<Users size={17} />} label="房间状态" value={roomState.status} />
+      </div>
+      <div className="rounded-lg bg-white/82 p-4 ring-1 ring-ink/10">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-black text-coral">本场隐藏任务</p>
+            <h3 className="mt-1 text-xl font-black text-ink">{funQuestions[match.funQuestionKey]}</h3>
+          </div>
+          <span className="inline-flex items-center gap-2 rounded-full bg-gold/25 px-3 py-1 text-sm font-black text-ink ring-1 ring-gold/35">
+            <Sparkles size={15} />
+            趣味题 +2 分
+          </span>
+        </div>
+        <p className="mt-3 text-sm font-bold leading-6 text-ink/60">{roomState.line}</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
         {players.map((player) => {
           const prediction = predictions.find((item) => item.playerId === player.id);
           const settlement = settlements.find((item) => item.playerId === player.id);
-          return <PredictionSummary key={player.id} match={match} player={player} prediction={prediction} settlement={settlement} />;
+          return <PlayerRoomSeat key={player.id} match={match} player={player} prediction={prediction} settlement={settlement} />;
         })}
       </div>
+      <PredictionForm currentPlayer={currentPlayer} locked={locked} match={match} prediction={ownPrediction} onSaved={onSaved} />
+    </div>
+  );
+}
+
+function RoomMetric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-white/82 p-3 ring-1 ring-ink/10">
+      <div className="flex items-center gap-2 text-sm font-black text-ink/55">
+        {icon}
+        {label}
+      </div>
+      <p className="mt-2 text-lg font-black text-ink">{value}</p>
+    </div>
+  );
+}
+
+function PlayerRoomSeat({
+  match,
+  player,
+  prediction,
+  settlement,
+}: {
+  match: Match;
+  player: Player;
+  prediction: Prediction | undefined;
+  settlement: Settlement | undefined;
+}) {
+  const status = prediction ? (prediction.lockedAt || new Date(match.kickoffAt).getTime() <= Date.now() ? "已入座锁定" : "已保存草稿") : "等待下注";
+  return (
+    <div className="room-seat">
+      <div className="flex items-center gap-3">
+        <PixelAvatar row={playerAvatarRow(player)} size="small" />
+        <div>
+          <p className="text-sm font-black text-ink/55">观赛席</p>
+          <h3 className="text-xl font-black" style={{ color: player.avatarColor }}>{player.displayName}</h3>
+        </div>
+        <span className="ml-auto rounded-full bg-white px-3 py-1 text-xs font-black text-ink/65 ring-1 ring-ink/10">{status}</span>
+      </div>
+      <p className="mt-3 text-sm font-bold leading-6 text-ink/65">
+        {prediction
+          ? `押 ${pickResultLabel(prediction.pickResult, match)}，比分 ${match.homeTeam} ${prediction.predictedHomeScore}-${prediction.predictedAwayScore} ${match.awayTeam}，趣味题选${prediction.funAnswer ? "是" : "否"}。`
+          : "还没交卷，房间里留着一张空白小纸条。"}
+      </p>
+      {settlement ? (
+        <p className="mt-2 text-sm font-black text-ink">{settlement.points} 分 · {formatMoney(settlement.netAmount)}</p>
+      ) : null}
     </div>
   );
 }
@@ -782,41 +870,145 @@ function PredictionForm({
   );
 }
 
-function PredictionSummary({
-  match,
-  player,
-  prediction,
-  settlement,
-}: {
-  match: Match;
-  player: Player;
-  prediction: Prediction | undefined;
-  settlement: Settlement | undefined;
-}) {
-  return (
-    <div className="rounded-md bg-white p-3 ring-1 ring-ink/10">
-      <div className="flex items-center justify-between gap-3">
-        <p className="font-black" style={{ color: player.avatarColor }}>{player.displayName}</p>
-        {settlement ? <span className="font-black">{settlement.points} 分 · {formatMoney(settlement.netAmount)}</span> : <span className="text-sm font-bold text-ink/50">未结算</span>}
-      </div>
-      <p className="mt-1 text-sm font-semibold text-ink/65">
-        {prediction
-          ? `选择 ${pickResultLabel(prediction.pickResult, match)}，${match.homeTeam} ${prediction.predictedHomeScore} - ${prediction.predictedAwayScore} ${match.awayTeam}，趣味题 ${prediction.funAnswer ? "是" : "否"}`
-          : "尚未下注"}
-      </p>
-    </div>
-  );
-}
-
 function pickResultLabel(pickResult: Prediction["pickResult"], match: Match) {
   if (pickResult === "home") return `${match.homeTeam} 胜`;
   if (pickResult === "away") return `${match.awayTeam} 胜`;
   return "平局";
 }
 
-function LedgerView({ matches, players, settlements }: { matches: Match[]; players: Player[]; settlements: Settlement[] }) {
+function playerAvatarRow(player: Player): DashboardStats {
+  return {
+    playerId: player.id,
+    code: player.code,
+    displayName: player.displayName,
+    avatarColor: player.avatarColor,
+    points: 0,
+    netAmount: 0,
+    exactScores: 0,
+    funHits: 0,
+    streakBadges: 0,
+  };
+}
+
+function buildMatchRoomState(match: Match, predictions: Prediction[], playerCount: number) {
+  const kickoffTime = new Date(match.kickoffAt).getTime();
+  const now = Date.now();
+  const savedCount = predictions.length;
+  const lockedCount = predictions.filter((prediction) => prediction.lockedAt !== null || now >= kickoffTime).length;
+  const allSaved = playerCount > 0 && savedCount >= playerCount;
+  const allLocked = playerCount > 0 && lockedCount >= playerCount;
+
+  if (match.status === "finished") {
+    return {
+      countdown: "比赛已完赛",
+      status: "故事已结算",
+      line: "这间小房间已经熄灯，比分和趣味题都写进账本里了。",
+    };
+  }
+  if (match.status === "live") {
+    return {
+      countdown: "比赛进行中",
+      status: "房门已锁",
+      line: "比赛已经开踢，现在只能等终场哨声和自动结算。",
+    };
+  }
+  if (now >= kickoffTime) {
+    return {
+      countdown: "等待赛果",
+      status: "房门已锁",
+      line: "开球时间已过，下注入口关闭，接下来等同步赛果。",
+    };
+  }
+
+  const countdown = formatCountdown(kickoffTime - now);
+  if (allLocked) {
+    return {
+      countdown,
+      status: "双方已锁定",
+      line: "两张小纸条都已经封进信封，等开球后一起拆剧情。",
+    };
+  }
+  if (allSaved) {
+    return {
+      countdown,
+      status: "双方已保存",
+      line: "双方都已经交卷，想更有仪式感的话可以开球前手动锁定。",
+    };
+  }
+  return {
+    countdown,
+    status: `${savedCount}/${Math.max(playerCount, 1)} 已下注`,
+    line: "房间里还留着空座位，开球前记得把胜平负、比分和趣味题都填好。",
+  };
+}
+
+function formatCountdown(ms: number) {
+  const totalMinutes = Math.max(0, Math.floor(ms / 60000));
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `${days} 天 ${hours} 小时`;
+  if (hours > 0) return `${hours} 小时 ${minutes} 分`;
+  return `${minutes} 分钟`;
+}
+
+function buildLedgerStory(match: Match, players: Player[], predictions: Prediction[], settlements: Settlement[]) {
+  const sortedSettlements = [...settlements].sort((a, b) => b.netAmount - a.netAmount || b.points - a.points);
+  const winnerSettlement = sortedSettlements[0];
+  const loserSettlement = sortedSettlements[sortedSettlements.length - 1];
+  const winner = players.find((player) => player.id === winnerSettlement?.playerId);
+  const loser = players.find((player) => player.id === loserSettlement?.playerId);
+  const exactPlayers = settlements
+    .filter((settlement) => settlement.exactScoreBonus > 0)
+    .map((settlement) => players.find((player) => player.id === settlement.playerId)?.displayName)
+    .filter(Boolean);
+  const funPlayers = settlements
+    .filter((settlement) => settlement.funPoints > 0)
+    .map((settlement) => players.find((player) => player.id === settlement.playerId)?.displayName)
+    .filter(Boolean);
+  const pointGap = sortedSettlements.length >= 2 ? sortedSettlements[0].points - sortedSettlements[1].points : 0;
+  const bothPredicted = players.length > 0 && predictions.length >= players.length;
+
+  if (!winnerSettlement || !winner || winnerSettlement.netAmount === 0 || pointGap === 0) {
+    return {
+      title: `${match.homeTeam} vs ${match.awayTeam}`,
+      badge: "握手言和",
+      line: bothPredicted
+        ? "这一场没有人真正拉开差距，两张赛前纸条在账本里打成平手。"
+        : "这一场留下了结算记录，但赛前纸条不完整，剧情暂时温柔收场。",
+    };
+  }
+
+  const highlight = exactPlayers.length > 0
+    ? `${exactPlayers.join("、")} 抓到了精确比分，直接把奖励写进账本。`
+    : funPlayers.length > 0
+      ? `${funPlayers.join("、")} 在趣味题上偷到关键分。`
+      : "胜平负和比分走势决定了这一场的走向。";
+
+  return {
+    title: `${winner.displayName} 小赢一幕`,
+    badge: formatMoney(winnerSettlement.netAmount),
+    line: `${winner.displayName} 从这场带走 ${formatMoney(winnerSettlement.netAmount)}，${loser?.displayName ?? "对手"} 暂时把账记下。${highlight}`,
+  };
+}
+
+function LedgerView({
+  matches,
+  players,
+  predictions,
+  settlements,
+}: {
+  matches: Match[];
+  players: Player[];
+  predictions: Prediction[];
+  settlements: Settlement[];
+}) {
   const rows = matches
-    .map((match) => ({ match, settlements: settlements.filter((item) => item.matchId === match.id) }))
+    .map((match) => ({
+      match,
+      predictions: predictions.filter((item) => item.matchId === match.id),
+      settlements: settlements.filter((item) => item.matchId === match.id),
+    }))
     .filter((row) => row.settlements.length > 0);
   const badgeSummaries = buildBadgeSummaries(players, matches, settlements);
 
@@ -854,26 +1046,46 @@ function LedgerView({ matches, players, settlements }: { matches: Match[]; playe
         </div>
       </div>
 
-      <div className="rounded-lg bg-white/88 p-4 shadow-soft ring-1 ring-ink/10">
-        <h2 className="mb-4 text-xl font-black">结算账本</h2>
-        <div className="grid gap-3">
-          {rows.map(({ match, settlements: matchSettlements }) => (
-            <div className="rounded-md bg-white p-3 ring-1 ring-ink/10" key={match.id}>
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="font-black">#{match.matchNumber} {match.homeTeam} {match.homeScore90}-{match.awayScore90} {match.awayTeam}</p>
-                  <p className="text-sm font-bold text-ink/55">{stageLabel(match.stage)} · {formatFullBeijingTime(match.kickoffAt)}</p>
+      <div className="rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-grass">故事账本</p>
+            <h2 className="text-2xl font-black text-ink">每场比赛的小剧本</h2>
+          </div>
+          <span className="inline-flex items-center gap-2 rounded-full bg-ink px-3 py-1 text-sm font-black text-white">
+            <Flag size={15} />
+            {rows.length} 场已写入
+          </span>
+        </div>
+        <div className="ledger-storyline">
+          {rows.map(({ match, predictions: matchPredictions, settlements: matchSettlements }) => {
+            const story = buildLedgerStory(match, players, matchPredictions, matchSettlements);
+            return (
+              <article className="ledger-story-card" key={match.id}>
+                <div className="ledger-story-dot" aria-hidden="true" />
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-coral">第 {match.matchNumber} 幕 · {stageLabel(match.stage)}</p>
+                    <h3 className="mt-1 text-2xl font-black text-ink">{story.title}</h3>
+                    <p className="mt-2 text-sm font-bold text-ink/55">{formatFullBeijingTime(match.kickoffAt)} · {match.venue ?? "待定场馆"}</p>
+                  </div>
+                  <span className="rounded-full bg-mint px-3 py-1 text-sm font-black text-ink ring-1 ring-grass/20">{story.badge}</span>
                 </div>
-                <span className="rounded-full bg-ink px-3 py-1 text-sm font-black text-white">{matchStatusText(match)}</span>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {players.map((player) => {
-                  const settlement = matchSettlements.find((item) => item.playerId === player.id);
-                  return <SettlementDetail key={player.id} player={player} settlement={settlement} />;
-                })}
-              </div>
-            </div>
-          ))}
+                <div className="mt-4 rounded-lg bg-white/72 p-4 ring-1 ring-ink/10">
+                  <p className="text-lg font-black text-ink">{match.homeTeam} {match.homeScore90}-{match.awayScore90} {match.awayTeam}</p>
+                  <p className="mt-2 text-sm font-bold leading-6 text-ink/65">{story.line}</p>
+                  <p className="mt-2 text-sm font-bold leading-6 text-ink/55">隐藏任务：{funQuestions[match.funQuestionKey]} 答案是 {match.funQuestionAnswer === null ? "待确认" : match.funQuestionAnswer ? "是" : "否"}。</p>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {players.map((player) => {
+                    const settlement = matchSettlements.find((item) => item.playerId === player.id);
+                    const prediction = matchPredictions.find((item) => item.playerId === player.id);
+                    return <SettlementDetail key={player.id} match={match} player={player} prediction={prediction} settlement={settlement} />;
+                  })}
+                </div>
+              </article>
+            );
+          })}
           {rows.length === 0 ? <p className="font-bold text-ink/60">暂无已结算比赛。</p> : null}
         </div>
       </div>
@@ -881,7 +1093,17 @@ function LedgerView({ matches, players, settlements }: { matches: Match[]; playe
   );
 }
 
-function SettlementDetail({ player, settlement }: { player: Player; settlement: Settlement | undefined }) {
+function SettlementDetail({
+  match,
+  player,
+  prediction,
+  settlement,
+}: {
+  match: Match;
+  player: Player;
+  prediction: Prediction | undefined;
+  settlement: Settlement | undefined;
+}) {
   if (!settlement) {
     return (
       <div className="rounded-md bg-mint/35 p-3 ring-1 ring-ink/10">
@@ -905,6 +1127,11 @@ function SettlementDetail({ player, settlement }: { player: Player; settlement: 
         <p className="font-black" style={{ color: player.avatarColor }}>{player.displayName}</p>
         <span className="font-black">{settlement.points} 分 · {formatMoney(settlement.netAmount)}</span>
       </div>
+      <p className="mt-2 text-sm font-bold leading-6 text-ink/60">
+        {prediction
+          ? `赛前纸条：${pickResultLabel(prediction.pickResult, match)}，${match.homeTeam} ${prediction.predictedHomeScore}-${prediction.predictedAwayScore} ${match.awayTeam}，趣味题选${prediction.funAnswer ? "是" : "否"}。`
+          : "赛前纸条缺席。"}
+      </p>
       <div className="mt-3 grid gap-2">
         {detailRows.map(({ label, value, suffix }) => (
           <div className="ledger-score-row" key={label}>
