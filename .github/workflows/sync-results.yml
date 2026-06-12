@@ -2,7 +2,7 @@ name: Sync World Cup Results
 
 on:
   schedule:
-    - cron: "20 */2 * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:

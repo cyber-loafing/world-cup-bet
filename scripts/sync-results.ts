@@ -8,6 +8,9 @@ const insforgeApiKey = requiredEnv("INSFORGE_API_KEY");
 const apiFootballKey = requiredEnv("API_FOOTBALL_KEY");
 const apiBaseUrl = "https://v3.football.api-sports.io";
 const openFootballScheduleUrl = "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json";
+const regularSyncIntervalMs = 60 * 60 * 1000;
+const regularSyncGraceMs = 5 * 60 * 1000;
+const resultPollingDelayMs = 110 * 60 * 1000;
 
 const insforge = createAdminClient({
   baseUrl: insforgeUrl,
@@ -85,7 +88,27 @@ type DbPrediction = {
   locked_at: string | null;
 };
 
+type DbMatchCadence = {
+  match_number: number;
+  home_team: string;
+  away_team: string;
+  kickoff_at: string;
+  status: MatchStatus;
+};
+
+type DbSyncRun = {
+  finished_at: string | null;
+  status: string;
+};
+
 async function main() {
+  const decision = await getSyncDecision();
+  if (!decision.shouldSync) {
+    console.log(decision.reason);
+    return;
+  }
+  console.log(decision.reason);
+
   const runId = await createSyncRun();
   try {
     const { fixtures, source, note } = await fetchFixtures();
@@ -99,12 +122,86 @@ async function main() {
     }
 
     await settleFinishedMatches(upsertedMatches.filter((match) => match.status === "finished"));
-    await finishSyncRun(runId, "success", [`Synced ${upsertedMatches.length} fixtures from ${source}.`, note].filter(Boolean).join(" "));
+    await finishSyncRun(
+      runId,
+      "success",
+      [`${decision.reason}.`, `Synced ${upsertedMatches.length} fixtures from ${source}.`, note].filter(Boolean).join(" "),
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown sync error";
     await finishSyncRun(runId, "error", message);
     throw error;
   }
+}
+
+async function getSyncDecision(now = new Date()): Promise<{ shouldSync: boolean; reason: string }> {
+  if (process.env.GITHUB_EVENT_NAME !== "schedule") {
+    return { shouldSync: true, reason: "Running sync because it was triggered manually or locally" };
+  }
+
+  const [matches, lastSuccess] = await Promise.all([loadMatchesForCadence(), loadLastSuccessfulSync()]);
+  if (matches.length === 0) {
+    return { shouldSync: true, reason: "Running sync because no matches are stored yet" };
+  }
+
+  const pollableMatch = findMatchNeedingResultPolling(matches, now);
+  if (pollableMatch) {
+    return {
+      shouldSync: true,
+      reason: `Running 5-minute result polling for match #${pollableMatch.match_number} ${pollableMatch.home_team} vs ${pollableMatch.away_team}`,
+    };
+  }
+
+  if (!lastSuccess) {
+    return { shouldSync: true, reason: "Running sync because no successful sync is recorded yet" };
+  }
+
+  const lastSuccessAt = new Date(lastSuccess.finished_at ?? 0).getTime();
+  if (Number.isNaN(lastSuccessAt)) {
+    return { shouldSync: true, reason: "Running sync because the last successful sync time is invalid" };
+  }
+
+  if (now.getTime() - lastSuccessAt >= regularSyncIntervalMs - regularSyncGraceMs) {
+    return { shouldSync: true, reason: "Running regular hourly sync" };
+  }
+
+  return { shouldSync: false, reason: "Skipping sync: no match is in the 5-minute result polling window and the hourly sync is not due yet" };
+}
+
+async function loadMatchesForCadence(): Promise<DbMatchCadence[]> {
+  const { data, error } = await insforge.database
+    .from("matches")
+    .select("match_number,home_team,away_team,kickoff_at,status")
+    .order("kickoff_at");
+  if (error) {
+    throw error;
+  }
+  return data as DbMatchCadence[];
+}
+
+async function loadLastSuccessfulSync(): Promise<DbSyncRun | null> {
+  const { data, error } = await insforge.database
+    .from("sync_runs")
+    .select("finished_at,status")
+    .order("started_at", { ascending: false })
+    .limit(10);
+  if (error) {
+    throw error;
+  }
+  return ((data as DbSyncRun[]) ?? []).find((run) => run.status === "success" && Boolean(run.finished_at)) ?? null;
+}
+
+function findMatchNeedingResultPolling(matches: DbMatchCadence[], now: Date) {
+  return matches.find((match) => {
+    if (!["scheduled", "live"].includes(match.status)) {
+      return false;
+    }
+    const kickoffAt = new Date(match.kickoff_at).getTime();
+    if (Number.isNaN(kickoffAt)) {
+      return false;
+    }
+    return now.getTime() >= kickoffAt + resultPollingDelayMs;
+  });
 }
 
 async function fetchFixtures(): Promise<{ fixtures: ApiFixture[]; source: string; note?: string }> {
