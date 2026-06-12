@@ -66,6 +66,25 @@ const emptyState: AppState = {
 };
 
 const goalOptions = Array.from({ length: 11 }, (_, index) => index);
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
+function publicAsset(path: string) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (basePath) {
+    return `${basePath}${normalizedPath}`;
+  }
+  if (typeof window !== "undefined") {
+    const firstPathSegment = window.location.pathname.split("/").filter(Boolean)[0];
+    if (firstPathSegment === "world-cup-bet") {
+      return `/${firstPathSegment}${normalizedPath}`;
+    }
+  }
+  return normalizedPath;
+}
+
+function cssUrl(path: string) {
+  return `url("${publicAsset(path)}")`;
+}
 
 export function WorldCupApp({ initialView }: { initialView: View }) {
   const [view, setView] = useState<View>(initialView);
@@ -492,6 +511,7 @@ function normalizeRunnerStats(stats: DashboardStats[], mode: DramaMode) {
 
 function PixelRace({ stats, drama }: { stats: Array<DashboardStats & { lane: number; left: number }>; drama: DramaState }) {
   const ballStyle = getBallStyle(stats, drama);
+  const trackStyle = { "--pixel-field-image": cssUrl("/assets/pixel/world-cup-field.png") } as CSSProperties;
 
   return (
     <div className="pixel-race" aria-label="情侣竞猜像素追逐动画">
@@ -504,14 +524,20 @@ function PixelRace({ stats, drama }: { stats: Array<DashboardStats & { lane: num
           </div>
         ))}
       </div>
-      <div className={clsx("pixel-track pixel-track-generated", `drama-${drama.mode}`)} aria-hidden="true">
+      <div className={clsx("pixel-track pixel-track-generated", `drama-${drama.mode}`)} style={trackStyle} aria-hidden="true">
         <div className="pixel-field-vignette" />
-        <div className="pixel-ball-sprite" style={ballStyle} />
+        <div className="pixel-ball-sprite" style={{ ...ballStyle, "--pixel-ball-image": cssUrl("/assets/pixel/ball-roll.png") } as CSSProperties} />
         {stats.map((row) => (
           <div
             className={clsx("pixel-runner", row.playerId === drama.leaderId ? "is-leading" : "is-chasing", row.playerId === drama.trailerId ? "is-trailing" : null)}
             key={row.playerId}
-            style={{ "--runner-left": `${row.left}%`, "--runner-top": `${42 + row.lane * 34}%` } as CSSProperties}
+            style={
+              {
+                "--runner-left": `${row.left}%`,
+                "--runner-top": `${42 + row.lane * 34}%`,
+                "--runner-sprite-image": cssUrl(row.code === "player_a" ? "/assets/pixel/beibei-run.png" : "/assets/pixel/jiumei-run.png"),
+              } as CSSProperties
+            }
           >
             <div className="pixel-name-tag">{row.displayName}</div>
             {drama.mode === "close" && row.playerId === drama.trailerId ? <div className="pixel-var-board">VAR</div> : null}

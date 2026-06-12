@@ -585,7 +585,7 @@ select {
 }
 
 .pixel-track-generated {
-  background: #5fcb5f url("/assets/pixel/world-cup-field.png") center / cover no-repeat;
+  background: #5fcb5f var(--pixel-field-image, url("/assets/pixel/world-cup-field.png")) center / cover no-repeat;
   box-shadow:
     inset 0 -18px rgba(23, 33, 28, 0.1),
     inset 0 0 0 1px rgba(255, 255, 255, 0.28);
@@ -702,7 +702,7 @@ select {
 .pixel-ball-sprite {
   --sprite-shift: -180px;
   animation: ball-sprite-roll 660ms steps(6) infinite;
-  background: url("/assets/pixel/ball-roll.png") 0 0 / 600% 100% no-repeat;
+  background: var(--pixel-ball-image, url("/assets/pixel/ball-roll.png")) 0 0 / 600% 100% no-repeat;
   height: 30px;
   image-rendering: pixelated;
   left: var(--ball-left, 50%);
@@ -825,11 +825,11 @@ select {
 }
 
 .runner-sprite-bb {
-  background-image: url("/assets/pixel/beibei-run.png");
+  background-image: var(--runner-sprite-image, url("/assets/pixel/beibei-run.png"));
 }
 
 .runner-sprite-jm {
-  background-image: url("/assets/pixel/jiumei-run.png");
+  background-image: var(--runner-sprite-image, url("/assets/pixel/jiumei-run.png"));
 }
 
 .pixel-runner.is-leading .runner-sprite {
