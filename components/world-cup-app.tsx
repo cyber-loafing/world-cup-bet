@@ -12,6 +12,8 @@ import {
   Loader2,
   Lock,
   LogOut,
+  Map,
+  Medal,
   Save,
   ShieldCheck,
   Sparkles,
@@ -303,6 +305,8 @@ function Dashboard({
         <TodayCalendar matches={todayMatches} />
       </div>
 
+      <TournamentMap matches={matches} />
+
       <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
           <p className="text-sm font-bold text-grass">下一场</p>
@@ -371,6 +375,97 @@ function TodayCalendar({ matches }: { matches: Match[] }) {
       )}
     </div>
   );
+}
+
+function TournamentMap({ matches }: { matches: Match[] }) {
+  const groupMap = buildGroupMap(matches);
+  const knockoutMap = buildKnockoutMap(matches);
+  const totalFinished = matches.filter((match) => match.status === "finished").length;
+
+  return (
+    <div className="tournament-map rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-grass">世界杯地图</p>
+          <h3 className="text-2xl font-black text-ink">小组赛与淘汰赛路线</h3>
+        </div>
+        <span className="inline-flex items-center gap-2 rounded-full bg-ink px-3 py-1 text-sm font-black text-white">
+          <Map size={15} />
+          {totalFinished}/{matches.length || 104}
+        </span>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <div>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="font-black text-ink">小组赛大陆</p>
+            <span className="text-sm font-bold text-ink/55">A-L 组</span>
+          </div>
+          <div className="group-map-grid">
+            {groupMap.map((group) => (
+              <div className={clsx("group-map-cell", group.finished === group.total && group.total > 0 ? "is-complete" : null)} key={group.name}>
+                <div className="pixel-map-flag" aria-hidden="true" />
+                <div>
+                  <p className="font-black">Group {group.name}</p>
+                  <p className="text-xs font-bold text-ink/55">{group.finished}/{group.total || 6} 已完赛</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="font-black text-ink">淘汰赛航线</p>
+            <span className="text-sm font-bold text-ink/55">一路到决赛</span>
+          </div>
+          <div className="knockout-route">
+            {knockoutMap.map((stage, index) => (
+              <div className="knockout-node" key={stage.key}>
+                <div className={clsx("knockout-dot", stage.finished > 0 ? "has-progress" : null)}>{index + 1}</div>
+                <div>
+                  <p className="font-black">{stage.label}</p>
+                  <p className="text-xs font-bold text-ink/55">{stage.finished}/{stage.totalDisplay} 已完赛</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildGroupMap(matches: Match[]) {
+  const groupNames = "ABCDEFGHIJKL".split("");
+  return groupNames.map((name) => {
+    const groupMatches = matches.filter((match) => match.stage === "group" && match.groupName === name);
+    return {
+      name,
+      total: groupMatches.length,
+      finished: groupMatches.filter((match) => match.status === "finished").length,
+    };
+  });
+}
+
+function buildKnockoutMap(matches: Match[]) {
+  const stages: Array<{ key: Match["stage"]; label: string; fallbackTotal: number }> = [
+    { key: "round_of_32", label: "32 强", fallbackTotal: 16 },
+    { key: "round_of_16", label: "16 强", fallbackTotal: 8 },
+    { key: "quarter_final", label: "1/4 决赛", fallbackTotal: 4 },
+    { key: "semi_final", label: "半决赛", fallbackTotal: 2 },
+    { key: "third_place", label: "季军赛", fallbackTotal: 1 },
+    { key: "final", label: "决赛", fallbackTotal: 1 },
+  ];
+  return stages.map((stage) => {
+    const stageMatches = matches.filter((match) => match.stage === stage.key);
+    return {
+      ...stage,
+      total: stageMatches.length,
+      totalDisplay: stageMatches.length || stage.fallbackTotal,
+      finished: stageMatches.filter((match) => match.status === "finished").length,
+    };
+  });
 }
 
 function normalizeRunnerStats(stats: DashboardStats[], mode: DramaMode) {
@@ -1011,6 +1106,7 @@ function LedgerView({
     }))
     .filter((row) => row.settlements.length > 0);
   const badgeSummaries = buildBadgeSummaries(players, matches, settlements);
+  const badgeCatalogs = buildBadgeCatalogs(players, matches, settlements);
 
   return (
     <section className="grid gap-4">
@@ -1041,6 +1137,55 @@ function LedgerView({
                 ))}
               </div>
               <p className="mt-3 text-sm font-bold leading-6 text-ink/60">{summary.note}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-grass">徽章图鉴</p>
+            <h2 className="text-2xl font-black text-ink">情侣称号收藏册</h2>
+          </div>
+          <span className="inline-flex items-center gap-2 rounded-full bg-gold/25 px-3 py-1 text-sm font-black text-ink ring-1 ring-gold/35">
+            <Medal size={15} />
+            可收藏
+          </span>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {badgeCatalogs.map((catalog) => (
+            <div className="badge-catalog-panel" key={catalog.player.id}>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <PixelAvatar row={catalog.stat} size="small" />
+                  <div>
+                    <p className="text-sm font-bold text-ink/55">{catalog.player.displayName}</p>
+                    <h3 className="text-xl font-black text-ink">{catalog.unlockedCount}/{catalog.items.length} 已解锁</h3>
+                  </div>
+                </div>
+                <div className="badge-progress-ring" style={{ "--badge-progress": `${catalog.progress}%` } as CSSProperties}>
+                  {catalog.progress}%
+                </div>
+              </div>
+              <div className="badge-catalog-grid">
+                {catalog.items.map((badge) => (
+                  <div className={clsx("badge-card", badge.unlocked ? "is-unlocked" : "is-locked")} key={badge.name}>
+                    <div className="badge-pixel-icon" aria-hidden="true" />
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-black text-ink">{badge.name}</p>
+                        <span className="rounded-full bg-white/80 px-2 py-0.5 text-[0.68rem] font-black text-ink/55 ring-1 ring-ink/10">{badge.rarity}</span>
+                      </div>
+                      <p className="mt-1 text-xs font-bold leading-5 text-ink/55">{badge.note}</p>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/70 ring-1 ring-ink/10">
+                        <div className="h-full rounded-full bg-grass" style={{ width: `${badge.progress}%` }} />
+                      </div>
+                      <p className="mt-1 text-xs font-black text-ink/50">{badge.progressText}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
@@ -1151,14 +1296,17 @@ type LedgerBadge = {
   priority: number;
 };
 
+type BadgeCatalogItem = LedgerBadge & {
+  unlocked: boolean;
+  progress: number;
+  progressText: string;
+  rarity: string;
+};
+
 function buildBadgeSummaries(players: Player[], matches: Match[], settlements: Settlement[]) {
   const stats = buildStats(players, settlements);
-  const highestNet = Math.max(...stats.map((stat) => stat.netAmount), 0);
-  const highestFunHits = Math.max(...stats.map((stat) => stat.funHits), 0);
-  const matchById = Object.fromEntries(matches.map((match) => [match.id, match]));
 
   return players.map((player) => {
-    const ownSettlements = settlements.filter((settlement) => settlement.playerId === player.id);
     const stat = stats.find((item) => item.playerId === player.id) ?? {
       playerId: player.id,
       code: player.code,
@@ -1170,25 +1318,19 @@ function buildBadgeSummaries(players: Player[], matches: Match[], settlements: S
       funHits: 0,
       streakBadges: 0,
     };
-    const resultPoints = ownSettlements.reduce((sum, settlement) => sum + settlement.resultPoints, 0);
-    const scoreNearHits = ownSettlements.filter((settlement) => settlement.scorePoints > 0 && settlement.exactScoreBonus === 0).length;
-    const penaltyQuestionHits = ownSettlements.filter((settlement) => matchById[settlement.matchId]?.funQuestionKey === "penalty_goal" && settlement.funPoints > 0).length;
-    const firstSettlement = [...ownSettlements].sort((a, b) => new Date(a.settledAt).getTime() - new Date(b.settledAt).getTime())[0];
-    const badges: LedgerBadge[] = [];
-
-    if (stat.exactScores > 0) badges.push({ name: "比分预言家", note: "精确比分已经被你抓到过。", priority: 100 });
-    if (stat.funHits > 0 && stat.funHits === highestFunHits) badges.push({ name: "玄学大师", note: "趣味题命中率正在发光。", priority: 95 });
-    if (stat.netAmount < 0) badges.push({ name: "反向球王", note: "方向感很浪漫，账本很诚实。", priority: 88 });
-    if (penaltyQuestionHits > 0) badges.push({ name: "点球猎人", note: "点球相关判断已经开张。", priority: 84 });
-    if (scoreNearHits > 0) badges.push({ name: "补时心碎者", note: "比分擦边命中，离精确只差一点点。", priority: 80 });
-    if (stat.netAmount > 0 && stat.netAmount === highestNet) badges.push({ name: "净赢领跑者", note: "小金库暂时跑在前面。", priority: 76 });
-    if (resultPoints >= 4) badges.push({ name: "稳胆专家", note: "胜平负基本盘很稳。", priority: 72 });
-    if (ownSettlements.some((settlement) => settlement.scorePoints > 0)) badges.push({ name: "火眼金睛", note: "比分走势有被你看穿。", priority: 68 });
-    if (stat.streakBadges > 0) badges.push({ name: "连胜小火苗", note: "三连胜徽章已经点燃。", priority: 64 });
-    if (ownSettlements.some((settlement) => settlement.advancePoints > 0)) badges.push({ name: "淘汰赛导演", note: "晋级剧本猜中了。", priority: 60 });
-    if (firstSettlement && firstSettlement.netAmount > 0) badges.push({ name: "开门红", note: "第一笔结算就带着胜利入场。", priority: 56 });
-    if (ownSettlements.length > 0 && badges.length === 0) badges.push({ name: "快乐热身中", note: "称号池正在等待高光时刻。", priority: 1 });
-    if (ownSettlements.length === 0) badges.push({ name: "等待开球", note: "第一场结算后称号就会出现。", priority: 1 });
+    const catalog = buildPlayerBadgeCatalog(player, stat, matches, settlements, stats);
+    const badges = catalog.filter((badge) => badge.unlocked);
+    if (badges.length === 0) {
+      badges.push({
+        name: "等待开球",
+        note: "第一场结算后称号就会出现。",
+        priority: 1,
+        unlocked: true,
+        progress: 0,
+        progressText: "0/1",
+        rarity: "初始",
+      });
+    }
 
     const sortedBadges = badges.sort((a, b) => b.priority - a.priority);
     const primaryTitle = sortedBadges[0]?.name ?? "等待开球";
@@ -1204,6 +1346,86 @@ function buildBadgeSummaries(players: Player[], matches: Match[], settlements: S
       note: sortedBadges[0]?.note ?? "第一场结算后称号就会出现。",
     };
   });
+}
+
+function buildBadgeCatalogs(players: Player[], matches: Match[], settlements: Settlement[]) {
+  const stats = buildStats(players, settlements);
+  return players.map((player) => {
+    const stat = stats.find((item) => item.playerId === player.id) ?? playerAvatarRow(player);
+    const items = buildPlayerBadgeCatalog(player, stat, matches, settlements, stats);
+    const unlockedCount = items.filter((badge) => badge.unlocked).length;
+    const progress = Math.round((unlockedCount / Math.max(items.length, 1)) * 100);
+    return {
+      player,
+      stat,
+      items,
+      unlockedCount,
+      progress,
+    };
+  });
+}
+
+function buildPlayerBadgeCatalog(
+  player: Player,
+  stat: DashboardStats,
+  matches: Match[],
+  settlements: Settlement[],
+  allStats: DashboardStats[],
+): BadgeCatalogItem[] {
+  const ownSettlements = settlements.filter((settlement) => settlement.playerId === player.id);
+  const matchById = Object.fromEntries(matches.map((match) => [match.id, match]));
+  const highestNet = Math.max(...allStats.map((item) => item.netAmount), 0);
+  const highestFunHits = Math.max(...allStats.map((item) => item.funHits), 0);
+  const resultPoints = ownSettlements.reduce((sum, settlement) => sum + settlement.resultPoints, 0);
+  const scoreHits = ownSettlements.filter((settlement) => settlement.scorePoints > 0).length;
+  const scoreNearHits = ownSettlements.filter((settlement) => settlement.scorePoints > 0 && settlement.exactScoreBonus === 0).length;
+  const advanceHits = ownSettlements.filter((settlement) => settlement.advancePoints > 0).length;
+  const firstSettlement = [...ownSettlements].sort((a, b) => new Date(a.settledAt).getTime() - new Date(b.settledAt).getTime())[0];
+  const funHitsByKey = (key: Match["funQuestionKey"]) =>
+    ownSettlements.filter((settlement) => matchById[settlement.matchId]?.funQuestionKey === key && settlement.funPoints > 0).length;
+  const positiveWins = ownSettlements.filter((settlement) => settlement.netAmount > 0).length;
+
+  const makeBadge = (
+    name: string,
+    note: string,
+    priority: number,
+    value: number,
+    target: number,
+    rarity: string,
+    unlockedOverride?: boolean,
+  ): BadgeCatalogItem => {
+    const unlocked = unlockedOverride ?? value >= target;
+    return {
+      name,
+      note,
+      priority,
+      unlocked,
+      progress: Math.min(100, Math.round((Math.max(value, 0) / Math.max(target, 1)) * 100)),
+      progressText: unlocked ? "已解锁" : `${Math.max(value, 0)}/${target}`,
+      rarity,
+    };
+  };
+
+  return [
+    makeBadge("比分预言家", "精确比分命中 1 次。", 100, stat.exactScores, 1, "稀有"),
+    makeBadge("三分拆弹手", "精确比分命中 3 次。", 98, stat.exactScores, 3, "史诗"),
+    makeBadge("玄学大师", "趣味题命中 3 次。", 95, stat.funHits, 3, "稀有", stat.funHits > 0 && stat.funHits === highestFunHits),
+    makeBadge("隐藏任务达人", "趣味题命中 5 次。", 92, stat.funHits, 5, "史诗"),
+    makeBadge("反向球王", "累计净赢小于 0。", 88, stat.netAmount < 0 ? 1 : 0, 1, "剧情", stat.netAmount < 0),
+    makeBadge("点球猎人", "点球趣味题命中 1 次。", 84, funHitsByKey("penalty_goal"), 1, "稀有"),
+    makeBadge("补时心碎者", "比分擦边命中但没精确 1 次。", 80, scoreNearHits, 1, "剧情"),
+    makeBadge("净赢领跑者", "当前净赢排名第一。", 76, stat.netAmount > 0 && stat.netAmount === highestNet ? 1 : 0, 1, "闪耀", stat.netAmount > 0 && stat.netAmount === highestNet),
+    makeBadge("稳胆专家", "胜平负累计拿到 4 分。", 72, resultPoints, 4, "常见"),
+    makeBadge("火眼金睛", "比分项拿分 1 次。", 68, scoreHits, 1, "常见"),
+    makeBadge("连胜小火苗", "获得三连胜徽章 1 次。", 64, stat.streakBadges, 1, "稀有"),
+    makeBadge("淘汰赛导演", "淘汰赛晋级球队猜中 1 次。", 60, advanceHits, 1, "史诗"),
+    makeBadge("开门红", "第一笔结算净赢为正。", 56, firstSettlement?.netAmount && firstSettlement.netAmount > 0 ? 1 : 0, 1, "剧情", Boolean(firstSettlement && firstSettlement.netAmount > 0)),
+    makeBadge("零封守门员", "零封趣味题命中 1 次。", 52, funHitsByKey("clean_sheet"), 1, "稀有"),
+    makeBadge("补时雷达", "75 分钟后进球趣味题命中 1 次。", 48, funHitsByKey("late_goal_after_75"), 1, "稀有"),
+    makeBadge("乌龙雷达", "乌龙球趣味题命中 1 次。", 44, funHitsByKey("own_goal"), 1, "稀有"),
+    makeBadge("黄牌侦探", "黄牌 4+ 趣味题命中 1 次。", 40, funHitsByKey("yellow_cards_4_plus"), 1, "稀有"),
+    makeBadge("小金库开张", "净赢场次达到 2 场。", 36, positiveWins, 2, "常见"),
+  ];
 }
 
 function LeaderboardView({ stats }: { stats: DashboardStats[] }) {
