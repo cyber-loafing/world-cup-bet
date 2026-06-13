@@ -8,6 +8,7 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,3 +28,5 @@ jobs:
           NEXT_PUBLIC_INSFORGE_URL: ${{ secrets.NEXT_PUBLIC_INSFORGE_URL }}
           INSFORGE_API_KEY: ${{ secrets.INSFORGE_API_KEY }}
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          SYNC_WATCH_WINDOW_MINUTES: "75"
+          SYNC_WATCH_MAX_MINUTES: "170"

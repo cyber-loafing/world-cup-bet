@@ -10,7 +10,10 @@ const apiBaseUrl = "https://v3.football.api-sports.io";
 const openFootballScheduleUrl = "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json";
 const regularSyncIntervalMs = 60 * 60 * 1000;
 const regularSyncGraceMs = 5 * 60 * 1000;
+const resultPollingIntervalMs = 5 * 60 * 1000;
 const resultPollingDelayMs = 110 * 60 * 1000;
+const scheduledWatchWindowMs = Number(process.env.SYNC_WATCH_WINDOW_MINUTES ?? 75) * 60 * 1000;
+const scheduledWatchMaxMs = Number(process.env.SYNC_WATCH_MAX_MINUTES ?? 170) * 60 * 1000;
 
 const insforge = createAdminClient({
   baseUrl: insforgeUrl,
@@ -109,13 +112,33 @@ type DbMatchQuestion = {
 };
 
 async function main() {
-  const decision = await getSyncDecision();
-  if (!decision.shouldSync) {
-    console.log(decision.reason);
+  if (process.env.GITHUB_EVENT_NAME !== "schedule") {
+    await runSync("Running sync because it was triggered manually or locally");
     return;
   }
-  console.log(decision.reason);
 
+  const watchStartedAt = Date.now();
+  while (true) {
+    const now = new Date();
+    const decision = await getSyncDecision(now);
+
+    if (decision.shouldSync) {
+      await runSync(decision.reason);
+    } else {
+      console.log(decision.reason);
+    }
+
+    const nextDelay = await getNextScheduledWatchDelay(new Date(), watchStartedAt);
+    if (nextDelay === null) {
+      return;
+    }
+    console.log(`Keeping scheduled sync alive; next result check in ${Math.round(nextDelay / 1000)} seconds.`);
+    await sleep(nextDelay);
+  }
+}
+
+async function runSync(reason: string) {
+  console.log(reason);
   const runId = await createSyncRun();
   try {
     const { fixtures, source, note } = await fetchFixtures();
@@ -134,7 +157,7 @@ async function main() {
     await finishSyncRun(
       runId,
       "success",
-      [`${decision.reason}.`, `Synced ${upsertedMatches.length} fixtures from ${source}.`, note].filter(Boolean).join(" "),
+      [`${reason}.`, `Synced ${upsertedMatches.length} fixtures from ${source}.`, note].filter(Boolean).join(" "),
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown sync error";
@@ -177,6 +200,30 @@ async function getSyncDecision(now = new Date()): Promise<{ shouldSync: boolean;
   return { shouldSync: false, reason: "Skipping sync: no match is in the 5-minute result polling window and the hourly sync is not due yet" };
 }
 
+async function getNextScheduledWatchDelay(now: Date, watchStartedAt: number) {
+  if (Date.now() - watchStartedAt >= scheduledWatchMaxMs) {
+    console.log("Stopping scheduled sync watch because max watch time was reached.");
+    return null;
+  }
+
+  const matches = await loadMatchesForCadence();
+  const pollableMatch = findMatchNeedingResultPolling(matches, now);
+  if (pollableMatch) {
+    return resultPollingIntervalMs;
+  }
+
+  const nextWindowAt = findNextResultPollingWindow(matches, now);
+  if (nextWindowAt === null) {
+    return null;
+  }
+
+  const delay = nextWindowAt - now.getTime();
+  if (delay > scheduledWatchWindowMs) {
+    return null;
+  }
+  return Math.max(0, delay);
+}
+
 async function loadMatchesForCadence(): Promise<DbMatchCadence[]> {
   const { data, error } = await insforge.database
     .from("matches")
@@ -211,6 +258,19 @@ function findMatchNeedingResultPolling(matches: DbMatchCadence[], now: Date) {
     }
     return now.getTime() >= kickoffAt + resultPollingDelayMs;
   });
+}
+
+function findNextResultPollingWindow(matches: DbMatchCadence[], now: Date) {
+  const windowStarts = matches
+    .filter((match) => ["scheduled", "live"].includes(match.status))
+    .map((match) => new Date(match.kickoff_at).getTime() + resultPollingDelayMs)
+    .filter((value) => !Number.isNaN(value) && value > now.getTime())
+    .sort((a, b) => a - b);
+  return windowStarts[0] ?? null;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function fetchFixtures(): Promise<{ fixtures: ApiFixture[]; source: string; note?: string }> {
