@@ -12,8 +12,8 @@ const regularSyncIntervalMs = 60 * 60 * 1000;
 const regularSyncGraceMs = 5 * 60 * 1000;
 const resultPollingIntervalMs = 5 * 60 * 1000;
 const resultPollingDelayMs = 110 * 60 * 1000;
-const scheduledWatchWindowMs = Number(process.env.SYNC_WATCH_WINDOW_MINUTES ?? 75) * 60 * 1000;
-const scheduledWatchMaxMs = Number(process.env.SYNC_WATCH_MAX_MINUTES ?? 170) * 60 * 1000;
+const scheduledWatchWindowMs = Number(process.env.SYNC_WATCH_WINDOW_MINUTES ?? 170) * 60 * 1000;
+const scheduledWatchMaxMs = Number(process.env.SYNC_WATCH_MAX_MINUTES ?? 230) * 60 * 1000;
 
 const insforge = createAdminClient({
   baseUrl: insforgeUrl,
