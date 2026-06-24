@@ -69,7 +69,15 @@ type LedgerStorySection = {
   key: string;
   label: string;
   note: string;
+  total: number;
   rows: LedgerStoryRow[];
+};
+
+type LedgerStorySectionMeta = {
+  key: string;
+  label: string;
+  note: string;
+  fallbackTotal: number;
 };
 
 const emptyState: AppState = {
@@ -1206,19 +1214,33 @@ function buildLedgerStory(match: Match, players: Player[], predictions: Predicti
   };
 }
 
-function buildLedgerStorySections(rows: LedgerStoryRow[]): LedgerStorySection[] {
-  const sectionOrder: Array<Omit<LedgerStorySection, "rows">> = [
-    { key: "group_1", label: "小组赛第 1 轮", note: "第 1-24 场" },
-    { key: "group_2", label: "小组赛第 2 轮", note: "第 25-48 场" },
-    { key: "group_3", label: "小组赛第 3 轮", note: "第 49-72 场" },
-    { key: "round_of_32", label: "淘汰赛 32 强", note: "单场定生死" },
-    { key: "round_of_16", label: "淘汰赛 16 强", note: "八强门票" },
-    { key: "quarter_final", label: "淘汰赛 8 强", note: "四强席位" },
-    { key: "semi_final", label: "淘汰赛 4 强", note: "半决赛" },
-    { key: "third_place", label: "季军赛", note: "最后一枚奖牌" },
-    { key: "final", label: "决赛", note: "最终章" },
-  ];
-  const groups = new globalThis.Map(sectionOrder.map((section) => [section.key, { ...section, rows: [] as LedgerStoryRow[] }]));
+const ledgerStorySectionOrder: LedgerStorySectionMeta[] = [
+  { key: "group_1", label: "小组赛第 1 轮", note: "第 1-24 场", fallbackTotal: 24 },
+  { key: "group_2", label: "小组赛第 2 轮", note: "第 25-48 场", fallbackTotal: 24 },
+  { key: "group_3", label: "小组赛第 3 轮", note: "第 49-72 场", fallbackTotal: 24 },
+  { key: "round_of_32", label: "淘汰赛 32 强", note: "单场定生死", fallbackTotal: 16 },
+  { key: "round_of_16", label: "淘汰赛 16 强", note: "八强门票", fallbackTotal: 8 },
+  { key: "quarter_final", label: "淘汰赛 8 强", note: "四强席位", fallbackTotal: 4 },
+  { key: "semi_final", label: "淘汰赛 4 强", note: "半决赛", fallbackTotal: 2 },
+  { key: "third_place", label: "季军赛", note: "最后一枚奖牌", fallbackTotal: 1 },
+  { key: "final", label: "决赛", note: "最终章", fallbackTotal: 1 },
+];
+
+function buildLedgerStorySections(rows: LedgerStoryRow[], matches: Match[]): LedgerStorySection[] {
+  const groups = new globalThis.Map(
+    ledgerStorySectionOrder.map((section) => [
+      section.key,
+      { ...section, total: 0, rows: [] as LedgerStoryRow[] },
+    ]),
+  );
+
+  for (const match of matches) {
+    const key = getLedgerStorySectionKey(match);
+    const section = groups.get(key);
+    if (section) {
+      section.total += 1;
+    }
+  }
 
   for (const row of rows) {
     const key = getLedgerStorySectionKey(row.match);
@@ -1226,16 +1248,74 @@ function buildLedgerStorySections(rows: LedgerStoryRow[]): LedgerStorySection[] 
   }
 
   const sections: LedgerStorySection[] = [];
-  for (const sectionMeta of sectionOrder) {
+  for (const sectionMeta of ledgerStorySectionOrder) {
     const section = groups.get(sectionMeta.key);
-    if (section && section.rows.length > 0) {
+    if (section) {
       sections.push({
         ...section,
+        total: section.total || sectionMeta.fallbackTotal,
         rows: [...section.rows].sort((a, b) => a.match.matchNumber - b.match.matchNumber),
       });
     }
   }
   return sections;
+}
+
+function buildLedgerSectionSummary(section: LedgerStorySection, players: Player[]) {
+  const playerStats = players.map((player) => {
+    const ownSettlements = section.rows
+      .map((row) => row.settlements.find((settlement) => settlement.playerId === player.id))
+      .filter((settlement): settlement is Settlement => Boolean(settlement));
+
+    return {
+      player,
+      points: ownSettlements.reduce((sum, settlement) => sum + settlement.points, 0),
+      netAmount: ownSettlements.reduce((sum, settlement) => sum + settlement.netAmount, 0),
+      exactHits: ownSettlements.filter((settlement) => settlement.exactScoreBonus > 0).length,
+      funHits: ownSettlements.filter((settlement) => settlement.funPoints > 0).length,
+    };
+  });
+  const sorted = [...playerStats].sort((a, b) => b.netAmount - a.netAmount || b.points - a.points);
+  const leader = sorted[0];
+  const trailer = sorted[1];
+  const completedText = `${section.rows.length}/${section.total}`;
+  const exactHits = playerStats.reduce((sum, stat) => sum + stat.exactHits, 0);
+  const funHits = playerStats.reduce((sum, stat) => sum + stat.funHits, 0);
+
+  if (section.rows.length === 0 || !leader) {
+    return {
+      title: "本章还没开写",
+      line: `${section.label} 还没有完成结算，等第一场结果回来，这一页就会开始记录你们的剧情。`,
+      leaderText: "待开球",
+      completedText,
+      extraText: "0 次命中",
+    };
+  }
+
+  if (!trailer || leader.netAmount === trailer.netAmount) {
+    return {
+      title: "本章暂时平手",
+      line: `${section.label} 已完成 ${completedText} 场，两个人还没有真正拉开差距。精确比分 ${exactHits} 次，趣味题 ${funHits} 次。`,
+      leaderText: "平手",
+      completedText,
+      extraText: `${exactHits + funHits} 次命中`,
+    };
+  }
+
+  const gap = leader.netAmount - trailer.netAmount;
+  const highlight = leader.exactHits > 0
+    ? `${leader.player.displayName} 抓到 ${leader.exactHits} 次精确比分。`
+    : leader.funHits > 0
+      ? `${leader.player.displayName} 靠 ${leader.funHits} 次趣味题命中稳住剧情。`
+      : "胜平负和比分走势正在慢慢拉开账本。";
+
+  return {
+    title: `${leader.player.displayName} 本章领跑`,
+    line: `${section.label} 已完成 ${completedText} 场，${leader.player.displayName} 暂时领先 ${formatMoney(gap)}。${highlight}`,
+    leaderText: `${leader.player.displayName} ${formatMoney(leader.netAmount)}`,
+    completedText,
+    extraText: `${exactHits} 比分 · ${funHits} 趣味题`,
+  };
 }
 
 function getLedgerStorySectionKey(match: Match) {
@@ -1263,6 +1343,7 @@ function LedgerView({
   settlements: Settlement[];
 }) {
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [activeStorySectionKey, setActiveStorySectionKey] = useState<string | null>(null);
   const rows = matches
     .map((match) => ({
       match,
@@ -1270,7 +1351,10 @@ function LedgerView({
       settlements: settlements.filter((item) => item.matchId === match.id),
     }))
     .filter((row) => row.settlements.length > 0);
-  const storySections = buildLedgerStorySections(rows);
+  const storySections = buildLedgerStorySections(rows, matches);
+  const defaultStorySection = storySections.find((section) => section.rows.length > 0) ?? storySections[0] ?? null;
+  const activeStorySection = storySections.find((section) => section.key === activeStorySectionKey) ?? defaultStorySection;
+  const activeStorySummary = activeStorySection ? buildLedgerSectionSummary(activeStorySection, players) : null;
   const badgeSummaries = buildBadgeSummaries(players, matches, settlements);
   const badgeCatalogs = buildBadgeCatalogs(players, matches, settlements);
 
@@ -1387,30 +1471,63 @@ function LedgerView({
             {rows.length} 场已写入
           </span>
         </div>
-        {storySections.length > 0 ? (
+        {activeStorySection && activeStorySummary ? (
           <div className="grid gap-5">
-            {storySections.map((section) => (
-              <div className="rounded-lg bg-mint/30 p-4 ring-1 ring-ink/10" key={section.key}>
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-black text-coral">{section.note}</p>
-                    <h3 className="text-2xl font-black text-ink">{section.label}</h3>
-                  </div>
-                  <span className="rounded-full bg-white px-3 py-1 text-sm font-black text-ink ring-1 ring-ink/10">{section.rows.length} 场</span>
+            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+              {storySections.map((section) => {
+                const isActive = section.key === activeStorySection.key;
+                return (
+                  <button
+                    className={clsx(
+                      "min-w-fit rounded-full px-4 py-2 text-left text-sm font-black ring-1 transition",
+                      isActive
+                        ? "bg-ink text-white ring-ink"
+                        : "bg-white/80 text-ink ring-ink/10 hover:bg-mint/50",
+                    )}
+                    key={section.key}
+                    onClick={() => setActiveStorySectionKey(section.key)}
+                    type="button"
+                  >
+                    <span>{section.label}</span>
+                    <span className={clsx("ml-2", isActive ? "text-white/70" : "text-ink/45")}>{section.rows.length}/{section.total}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="rounded-lg bg-mint/30 p-4 ring-1 ring-ink/10">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-black text-coral">{activeStorySection.note}</p>
+                  <h3 className="text-2xl font-black text-ink">{activeStorySection.label}</h3>
+                  <p className="mt-2 text-sm font-bold leading-6 text-ink/65">{activeStorySummary.line}</p>
                 </div>
-                <div className="ledger-storyline">
-                  {section.rows.map(({ match, predictions: matchPredictions, settlements: matchSettlements }) => (
-                    <LedgerStoryCard
-                      key={match.id}
-                      match={match}
-                      players={players}
-                      predictions={matchPredictions}
-                      settlements={matchSettlements}
-                    />
-                  ))}
-                </div>
+                <span className="rounded-full bg-white px-3 py-1 text-sm font-black text-ink ring-1 ring-ink/10">{activeStorySummary.title}</span>
               </div>
-            ))}
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <Metric label="章节进度" value={activeStorySummary.completedText} />
+                <Metric label="本章账面" value={activeStorySummary.leaderText} />
+                <Metric label="高光命中" value={activeStorySummary.extraText} />
+              </div>
+            </div>
+
+            {activeStorySection.rows.length > 0 ? (
+              <div className="ledger-storyline">
+                {activeStorySection.rows.map(({ match, predictions: matchPredictions, settlements: matchSettlements }) => (
+                  <LedgerStoryCard
+                    key={match.id}
+                    match={match}
+                    players={players}
+                    predictions={matchPredictions}
+                    settlements={matchSettlements}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg bg-white/72 p-5 text-sm font-bold leading-6 text-ink/60 ring-1 ring-ink/10">
+                这一章还没有完成的结算。等比赛结果同步回来后，故事会自动写到这里。
+              </div>
+            )}
           </div>
         ) : (
           <p className="font-bold text-ink/60">暂无已结算比赛。</p>
