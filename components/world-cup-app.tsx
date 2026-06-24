@@ -59,6 +59,19 @@ type DramaState = {
   trailerId: string | null;
 };
 
+type LedgerStoryRow = {
+  match: Match;
+  predictions: Prediction[];
+  settlements: Settlement[];
+};
+
+type LedgerStorySection = {
+  key: string;
+  label: string;
+  note: string;
+  rows: LedgerStoryRow[];
+};
+
 const emptyState: AppState = {
   matches: [],
   players: [],
@@ -1193,6 +1206,51 @@ function buildLedgerStory(match: Match, players: Player[], predictions: Predicti
   };
 }
 
+function buildLedgerStorySections(rows: LedgerStoryRow[]): LedgerStorySection[] {
+  const sectionOrder: Array<Omit<LedgerStorySection, "rows">> = [
+    { key: "group_1", label: "小组赛第 1 轮", note: "第 1-24 场" },
+    { key: "group_2", label: "小组赛第 2 轮", note: "第 25-48 场" },
+    { key: "group_3", label: "小组赛第 3 轮", note: "第 49-72 场" },
+    { key: "round_of_32", label: "淘汰赛 32 强", note: "单场定生死" },
+    { key: "round_of_16", label: "淘汰赛 16 强", note: "八强门票" },
+    { key: "quarter_final", label: "淘汰赛 8 强", note: "四强席位" },
+    { key: "semi_final", label: "淘汰赛 4 强", note: "半决赛" },
+    { key: "third_place", label: "季军赛", note: "最后一枚奖牌" },
+    { key: "final", label: "决赛", note: "最终章" },
+  ];
+  const groups = new globalThis.Map(sectionOrder.map((section) => [section.key, { ...section, rows: [] as LedgerStoryRow[] }]));
+
+  for (const row of rows) {
+    const key = getLedgerStorySectionKey(row.match);
+    groups.get(key)?.rows.push(row);
+  }
+
+  const sections: LedgerStorySection[] = [];
+  for (const sectionMeta of sectionOrder) {
+    const section = groups.get(sectionMeta.key);
+    if (section && section.rows.length > 0) {
+      sections.push({
+        ...section,
+        rows: [...section.rows].sort((a, b) => a.match.matchNumber - b.match.matchNumber),
+      });
+    }
+  }
+  return sections;
+}
+
+function getLedgerStorySectionKey(match: Match) {
+  if (match.stage !== "group") {
+    return match.stage;
+  }
+  if (match.matchNumber <= 24) {
+    return "group_1";
+  }
+  if (match.matchNumber <= 48) {
+    return "group_2";
+  }
+  return "group_3";
+}
+
 function LedgerView({
   matches,
   players,
@@ -1212,6 +1270,7 @@ function LedgerView({
       settlements: settlements.filter((item) => item.matchId === match.id),
     }))
     .filter((row) => row.settlements.length > 0);
+  const storySections = buildLedgerStorySections(rows);
   const badgeSummaries = buildBadgeSummaries(players, matches, settlements);
   const badgeCatalogs = buildBadgeCatalogs(players, matches, settlements);
 
@@ -1328,39 +1387,76 @@ function LedgerView({
             {rows.length} 场已写入
           </span>
         </div>
-        <div className="ledger-storyline">
-          {rows.map(({ match, predictions: matchPredictions, settlements: matchSettlements }) => {
-            const story = buildLedgerStory(match, players, matchPredictions, matchSettlements);
-            return (
-              <article className="ledger-story-card" key={match.id}>
-                <div className="ledger-story-dot" aria-hidden="true" />
-                <div className="flex flex-wrap items-start justify-between gap-3">
+        {storySections.length > 0 ? (
+          <div className="grid gap-5">
+            {storySections.map((section) => (
+              <div className="rounded-lg bg-mint/30 p-4 ring-1 ring-ink/10" key={section.key}>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-black text-coral">第 {match.matchNumber} 幕 · {stageLabel(match.stage)}</p>
-                    <h3 className="mt-1 text-2xl font-black text-ink">{story.title}</h3>
-                    <p className="mt-2 text-sm font-bold text-ink/55">{formatFullBeijingTime(match.kickoffAt)} · {match.venue ?? "待定场馆"}</p>
+                    <p className="text-sm font-black text-coral">{section.note}</p>
+                    <h3 className="text-2xl font-black text-ink">{section.label}</h3>
                   </div>
-                  <span className="rounded-full bg-mint px-3 py-1 text-sm font-black text-ink ring-1 ring-grass/20">{story.badge}</span>
+                  <span className="rounded-full bg-white px-3 py-1 text-sm font-black text-ink ring-1 ring-ink/10">{section.rows.length} 场</span>
                 </div>
-                <div className="mt-4 rounded-lg bg-white/72 p-4 ring-1 ring-ink/10">
-                  <p className="text-lg font-black text-ink">{match.homeTeam} {match.homeScore90}-{match.awayScore90} {match.awayTeam}</p>
-                  <p className="mt-2 text-sm font-bold leading-6 text-ink/65">{story.line}</p>
-                  <p className="mt-2 text-sm font-bold leading-6 text-ink/55">隐藏任务：{funQuestions[match.funQuestionKey]} 答案是 {match.funQuestionAnswer === null ? "待确认" : match.funQuestionAnswer ? "是" : "否"}。</p>
+                <div className="ledger-storyline">
+                  {section.rows.map(({ match, predictions: matchPredictions, settlements: matchSettlements }) => (
+                    <LedgerStoryCard
+                      key={match.id}
+                      match={match}
+                      players={players}
+                      predictions={matchPredictions}
+                      settlements={matchSettlements}
+                    />
+                  ))}
                 </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {players.map((player) => {
-                    const settlement = matchSettlements.find((item) => item.playerId === player.id);
-                    const prediction = matchPredictions.find((item) => item.playerId === player.id);
-                    return <SettlementDetail key={player.id} match={match} player={player} prediction={prediction} settlement={settlement} />;
-                  })}
-                </div>
-              </article>
-            );
-          })}
-          {rows.length === 0 ? <p className="font-bold text-ink/60">暂无已结算比赛。</p> : null}
-        </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="font-bold text-ink/60">暂无已结算比赛。</p>
+        )}
       </div>
     </section>
+  );
+}
+
+function LedgerStoryCard({
+  match,
+  players,
+  predictions,
+  settlements,
+}: {
+  match: Match;
+  players: Player[];
+  predictions: Prediction[];
+  settlements: Settlement[];
+}) {
+  const story = buildLedgerStory(match, players, predictions, settlements);
+
+  return (
+    <article className="ledger-story-card">
+      <div className="ledger-story-dot" aria-hidden="true" />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-black text-coral">第 {match.matchNumber} 幕 · {stageLabel(match.stage)}</p>
+          <h3 className="mt-1 text-2xl font-black text-ink">{story.title}</h3>
+          <p className="mt-2 text-sm font-bold text-ink/55">{formatFullBeijingTime(match.kickoffAt)} · {match.venue ?? "待定场馆"}</p>
+        </div>
+        <span className="rounded-full bg-mint px-3 py-1 text-sm font-black text-ink ring-1 ring-grass/20">{story.badge}</span>
+      </div>
+      <div className="mt-4 rounded-lg bg-white/72 p-4 ring-1 ring-ink/10">
+        <p className="text-lg font-black text-ink">{match.homeTeam} {match.homeScore90}-{match.awayScore90} {match.awayTeam}</p>
+        <p className="mt-2 text-sm font-bold leading-6 text-ink/65">{story.line}</p>
+        <p className="mt-2 text-sm font-bold leading-6 text-ink/55">隐藏任务：{funQuestions[match.funQuestionKey]} 答案是 {match.funQuestionAnswer === null ? "待确认" : match.funQuestionAnswer ? "是" : "否"}。</p>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {players.map((player) => {
+          const settlement = settlements.find((item) => item.playerId === player.id);
+          const prediction = predictions.find((item) => item.playerId === player.id);
+          return <SettlementDetail key={player.id} match={match} player={player} prediction={prediction} settlement={settlement} />;
+        })}
+      </div>
+    </article>
   );
 }
 
