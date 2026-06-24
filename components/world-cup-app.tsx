@@ -20,6 +20,7 @@ import {
   Sparkles,
   Timer,
   Trophy,
+  Archive,
   Users,
 } from "lucide-react";
 import clsx from "clsx";
@@ -68,6 +69,14 @@ const emptyState: AppState = {
 const goalOptions = Array.from({ length: 11 }, (_, index) => index);
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
+function isScheduleActive(match: Match) {
+  return match.status === "live" || (match.status === "scheduled" && new Date(match.kickoffAt).getTime() > Date.now());
+}
+
+function getDefaultScheduleMatch(matches: Match[]) {
+  return matches.find(isScheduleActive) ?? matches[0] ?? null;
+}
+
 function publicAsset(path: string) {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   if (basePath) {
@@ -107,7 +116,7 @@ export function WorldCupApp({ initialView }: { initialView: View }) {
       ]);
       setCurrentUserId(user?.id ?? null);
       setState({ players, matches, predictions, settlements });
-      setSelectedMatchId((current) => current ?? matches[0]?.id ?? null);
+      setSelectedMatchId((current) => current ?? getDefaultScheduleMatch(matches)?.id ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载失败");
     } finally {
@@ -127,7 +136,7 @@ export function WorldCupApp({ initialView }: { initialView: View }) {
   }, [currentUserId, state.players]);
 
   const stats = useMemo(() => buildStats(state.players, state.settlements), [state.players, state.settlements]);
-  const selectedMatch = state.matches.find((match) => match.id === selectedMatchId) ?? state.matches[0] ?? null;
+  const selectedMatch = state.matches.find((match) => match.id === selectedMatchId) ?? getDefaultScheduleMatch(state.matches);
   const nextMatch = useMemo(() => {
     const now = Date.now();
     return state.matches.find((match) => new Date(match.kickoffAt).getTime() >= now) ?? state.matches[0] ?? null;
@@ -661,43 +670,71 @@ function MatchesView({
   onSaved: () => void;
 }) {
   const [stage, setStage] = useState("all");
-  const visibleMatches = matches.filter((match) => stage === "all" || match.stage === stage);
+  const [showArchive, setShowArchive] = useState(false);
+  const stageMatches = matches.filter((match) => stage === "all" || match.stage === stage);
+  const activeMatches = stageMatches.filter(isScheduleActive);
+  const archivedMatches = stageMatches.filter((match) => match.status === "finished");
   const matchPredictions = predictions.filter((prediction) => prediction.matchId === selectedMatch?.id);
   const matchSettlements = settlements.filter((settlement) => settlement.matchId === selectedMatch?.id);
 
   return (
     <section className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
       <div className="rounded-lg bg-white/88 p-4 shadow-soft ring-1 ring-ink/10">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-xl font-black">赛程</h2>
-          <select className="rounded-md border border-ink/15 bg-white px-3 py-2 text-sm font-bold" onChange={(event) => setStage(event.target.value)} value={stage}>
-            <option value="all">全部阶段</option>
-            <option value="group">小组赛</option>
-            <option value="round_of_32">32 强</option>
-            <option value="round_of_16">16 强</option>
-            <option value="quarter_final">1/4 决赛</option>
-            <option value="semi_final">半决赛</option>
-            <option value="final">决赛</option>
-          </select>
-        </div>
-        <div className="grid max-h-[70vh] gap-2 overflow-auto pr-1">
-          {visibleMatches.map((match) => (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-black">赛程</h2>
+            <p className="mt-1 text-xs font-bold text-ink/55">默认只看还可下注和正在进行的比赛。</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <button
               className={clsx(
-                "rounded-md p-3 text-left ring-1 transition",
-                selectedMatch?.id === match.id ? "bg-mint ring-grass" : "bg-white ring-ink/10 hover:bg-mint/50",
+                "inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-black ring-1 transition",
+                showArchive ? "bg-ink text-white ring-ink" : "bg-white text-ink ring-ink/15 hover:bg-mint/50",
               )}
-              key={match.id}
-              onClick={() => onSelect(match.id)}
+              onClick={() => setShowArchive((current) => !current)}
               type="button"
             >
-              <div className="flex items-center justify-between gap-3 text-xs font-bold text-ink/60">
-                <span>#{match.matchNumber} {stageLabel(match.stage)}</span>
-                <span>{formatBeijingTime(match.kickoffAt)}</span>
-              </div>
-              <p className="mt-1 text-base font-black">{match.homeTeam} vs {match.awayTeam}</p>
+              <Archive size={16} />
+              已完成 {archivedMatches.length}
+              <ChevronDown className={clsx("transition-transform", showArchive ? "rotate-180" : null)} size={15} />
             </button>
-          ))}
+            <select className="rounded-md border border-ink/15 bg-white px-3 py-2 text-sm font-bold" onChange={(event) => setStage(event.target.value)} value={stage}>
+              <option value="all">全部阶段</option>
+              <option value="group">小组赛</option>
+              <option value="round_of_32">32 强</option>
+              <option value="round_of_16">16 强</option>
+              <option value="quarter_final">1/4 决赛</option>
+              <option value="semi_final">半决赛</option>
+              <option value="final">决赛</option>
+            </select>
+          </div>
+        </div>
+        <div className="mb-3 grid grid-cols-2 gap-2">
+          <Metric label="可下注/进行中" value={`${activeMatches.length}`} />
+          <Metric label="已归档" value={`${archivedMatches.length}`} />
+        </div>
+        <div className="grid max-h-[70vh] gap-3 overflow-auto pr-1">
+          <MatchList
+            emptyText="当前筛选下暂无可下注或进行中的比赛。"
+            matches={activeMatches}
+            onSelect={onSelect}
+            selectedMatchId={selectedMatch?.id ?? null}
+          />
+          {showArchive ? (
+            <div className="grid gap-2 border-t border-ink/10 pt-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-black text-ink/60">已完成归档</p>
+                <span className="rounded-full bg-mint px-2 py-0.5 text-xs font-black text-ink">{archivedMatches.length} 场</span>
+              </div>
+              <MatchList
+                emptyText="当前筛选下还没有已完赛比赛。"
+                matches={archivedMatches}
+                onSelect={onSelect}
+                selectedMatchId={selectedMatch?.id ?? null}
+                variant="archive"
+              />
+            </div>
+          ) : null}
         </div>
       </div>
       <div className="rounded-lg bg-white/88 p-4 shadow-soft ring-1 ring-ink/10">
@@ -715,6 +752,58 @@ function MatchesView({
         )}
       </div>
     </section>
+  );
+}
+
+function MatchList({
+  emptyText,
+  matches,
+  onSelect,
+  selectedMatchId,
+  variant = "active",
+}: {
+  emptyText: string;
+  matches: Match[];
+  onSelect: (matchId: string) => void;
+  selectedMatchId: string | null;
+  variant?: "active" | "archive";
+}) {
+  if (matches.length === 0) {
+    return <p className="rounded-md bg-mint/35 p-3 text-sm font-bold text-ink/60 ring-1 ring-ink/10">{emptyText}</p>;
+  }
+
+  return (
+    <div className="grid gap-2">
+      {matches.map((match) => (
+        <button
+          className={clsx(
+            "rounded-md p-3 text-left ring-1 transition",
+            selectedMatchId === match.id
+              ? "bg-mint ring-grass"
+              : variant === "archive"
+                ? "bg-white/70 ring-ink/10 hover:bg-white"
+                : "bg-white ring-ink/10 hover:bg-mint/50",
+          )}
+          key={match.id}
+          onClick={() => onSelect(match.id)}
+          type="button"
+        >
+          <div className="flex items-center justify-between gap-3 text-xs font-bold text-ink/60">
+            <span>#{match.matchNumber} {stageLabel(match.stage)}</span>
+            <span>{formatBeijingTime(match.kickoffAt)}</span>
+          </div>
+          <div className="mt-1 flex items-center justify-between gap-3">
+            <p className="min-w-0 text-base font-black">{match.homeTeam} vs {match.awayTeam}</p>
+            {variant === "archive" && match.homeScore90 !== null && match.awayScore90 !== null ? (
+              <span className="shrink-0 rounded-full bg-ink px-2 py-0.5 text-xs font-black text-white">
+                {match.homeScore90}-{match.awayScore90}
+              </span>
+            ) : null}
+          </div>
+          {variant === "archive" ? <p className="mt-1 text-xs font-bold text-ink/45">已归档 · 可点击查看结算详情</p> : null}
+        </button>
+      ))}
+    </div>
   );
 }
 
