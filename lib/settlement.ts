@@ -62,13 +62,13 @@ export function scorePrediction(match: Match, prediction: Prediction): ScoreBrea
     throw new Error("Finished matches must include 90-minute scores.");
   }
 
-  const resultPoints = prediction.pickResult === actualResult ? 2 : 0;
+  const predictedResult = getPredictedResult(prediction);
+  const resultPoints = predictedResult === actualResult ? 2 : 0;
   const exactScore =
     prediction.predictedHomeScore === homeScore90 &&
     prediction.predictedAwayScore === awayScore90;
   const predictedGoalDiff = prediction.predictedHomeScore - prediction.predictedAwayScore;
   const actualGoalDiff = homeScore90 - awayScore90;
-  const predictedResult = getPredictedResult(prediction);
   const scorePoints = exactScore
     ? 3
     : predictedResult === actualResult && predictedGoalDiff === actualGoalDiff

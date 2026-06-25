@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPredictionLocked, settleMatch } from "@/lib/settlement";
+import { isPredictionLocked, scorePrediction, settleMatch } from "@/lib/settlement";
 import type { Match, Prediction } from "@/lib/types";
 
 const baseMatch: Match = {
@@ -49,6 +49,17 @@ const bPrediction: Prediction = {
 };
 
 describe("settleMatch", () => {
+  it("derives result points from the predicted scoreline", () => {
+    const stalePickPrediction: Prediction = {
+      ...aPrediction,
+      pickResult: "away",
+      predictedHomeScore: 2,
+      predictedAwayScore: 1,
+    };
+
+    expect(scorePrediction(baseMatch, stalePickPrediction).resultPoints).toBe(2);
+  });
+
   it("scores group matches and applies exact-score bonus", () => {
     const settlements = settleMatch(baseMatch, [aPrediction, bPrediction]);
 

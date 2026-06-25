@@ -37,7 +37,7 @@ import {
 } from "@/lib/data";
 import { funQuestions } from "@/lib/fun-questions";
 import { formatBeijingTime, formatFullBeijingTime, formatMoney, stageLabel } from "@/lib/format";
-import { isPredictionLocked } from "@/lib/settlement";
+import { getPredictedResult, isPredictionLocked } from "@/lib/settlement";
 import { isInsForgeConfigured } from "@/lib/insforge";
 import type { DashboardStats, Match, Player, Prediction, Settlement } from "@/lib/types";
 
@@ -942,7 +942,7 @@ function PlayerRoomSeat({
       </div>
       <p className="mt-3 text-sm font-bold leading-6 text-ink/65">
         {prediction
-          ? `押 ${pickResultLabel(prediction.pickResult, match)}，比分 ${match.homeTeam} ${prediction.predictedHomeScore}-${prediction.predictedAwayScore} ${match.awayTeam}，趣味题选${prediction.funAnswer ? "是" : "否"}。`
+          ? `押 ${pickResultLabel(getPredictedResult(prediction), match)}，比分 ${match.homeTeam} ${prediction.predictedHomeScore}-${prediction.predictedAwayScore} ${match.awayTeam}，趣味题选${prediction.funAnswer ? "是" : "否"}。`
           : "还没交卷，房间里留着一张空白小纸条。"}
       </p>
       {settlement ? (
@@ -965,7 +965,6 @@ function PredictionForm({
   prediction: Prediction | undefined;
   onSaved: () => void;
 }) {
-  const [pickResult, setPickResult] = useState(prediction?.pickResult ?? "home");
   const [homeScore, setHomeScore] = useState(prediction?.predictedHomeScore ?? 1);
   const [awayScore, setAwayScore] = useState(prediction?.predictedAwayScore ?? 1);
   const [funAnswer, setFunAnswer] = useState(prediction?.funAnswer ?? true);
@@ -974,12 +973,15 @@ function PredictionForm({
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    setPickResult(prediction?.pickResult ?? "home");
     setHomeScore(prediction?.predictedHomeScore ?? 1);
     setAwayScore(prediction?.predictedAwayScore ?? 1);
     setFunAnswer(prediction?.funAnswer ?? true);
     setWinner(prediction?.predictedWinnerTeam ?? match.homeTeam);
   }, [match.id, match.homeTeam, prediction]);
+  const derivedPickResult = getPredictedResult({
+    predictedHomeScore: homeScore,
+    predictedAwayScore: awayScore,
+  });
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -994,7 +996,7 @@ function PredictionForm({
         id: prediction?.id,
         matchId: match.id,
         playerId: currentPlayer.id,
-        pickResult,
+        pickResult: derivedPickResult,
         predictedHomeScore: homeScore,
         predictedAwayScore: awayScore,
         funAnswer,
@@ -1032,14 +1034,13 @@ function PredictionForm({
         {locked ? <span className="inline-flex items-center gap-1 text-sm font-bold text-ink/65"><Lock size={15} /> 已锁定</span> : null}
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="block">
+        <div className="block">
           <span className="mb-1 block text-sm font-bold">胜平负</span>
-          <select className="w-full rounded-md border border-ink/15 bg-white px-3 py-2" disabled={locked} onChange={(event) => setPickResult(event.target.value as Prediction["pickResult"])} value={pickResult}>
-            <option value="home">{match.homeTeam} 胜</option>
-            <option value="draw">平局</option>
-            <option value="away">{match.awayTeam} 胜</option>
-          </select>
-        </label>
+          <div className="w-full rounded-md border border-ink/15 bg-white px-3 py-2 font-black text-ink">
+            {pickResultLabel(derivedPickResult, match)}
+          </div>
+          <p className="mt-1 text-xs font-bold text-ink/50">由比分自动推导</p>
+        </div>
         <label className="block">
           <span className="mb-1 block text-sm font-bold">{match.homeTeam} 进球</span>
           <select className="w-full rounded-md border border-ink/15 bg-white px-3 py-2" disabled={locked} onChange={(event) => setHomeScore(Number(event.target.value))} value={homeScore}>
@@ -1160,7 +1161,7 @@ function buildMatchRoomState(match: Match, predictions: Prediction[], playerCoun
   return {
     countdown,
     status: `${savedCount}/${Math.max(playerCount, 1)} 已下注`,
-    line: "房间里还留着空座位，开球前记得把胜平负、比分和趣味题都填好。",
+    line: "房间里还留着空座位，开球前记得把比分和趣味题都填好，胜平负会自动算出来。",
   };
 }
 
@@ -1613,7 +1614,7 @@ function SettlementDetail({
       </div>
       <p className="mt-2 text-sm font-bold leading-6 text-ink/60">
         {prediction
-          ? `赛前纸条：${pickResultLabel(prediction.pickResult, match)}，${match.homeTeam} ${prediction.predictedHomeScore}-${prediction.predictedAwayScore} ${match.awayTeam}，趣味题选${prediction.funAnswer ? "是" : "否"}。`
+          ? `赛前纸条：${pickResultLabel(getPredictedResult(prediction), match)}，${match.homeTeam} ${prediction.predictedHomeScore}-${prediction.predictedAwayScore} ${match.awayTeam}，趣味题选${prediction.funAnswer ? "是" : "否"}。`
           : "赛前纸条缺席。"}
       </p>
       <div className="mt-3 grid gap-2">
