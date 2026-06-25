@@ -1410,15 +1410,22 @@ function LedgerView({
             <ChevronDown className={clsx("transition-transform", catalogOpen ? "rotate-180" : null)} size={15} />
           </button>
         </div>
-        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+        <div className="badge-album-shell mb-4">
           {badgeCatalogs.map((catalog) => (
-            <div className="badge-catalog-summary" key={catalog.player.id}>
-              <div>
-                <p className="text-sm font-black" style={{ color: catalog.player.avatarColor }}>{catalog.player.displayName}</p>
-                <p className="text-xs font-bold text-ink/55">已解锁 {catalog.unlockedCount}/{catalog.items.length}</p>
+            <div className="badge-catalog-summary" key={catalog.player.id} style={{ "--player-color": catalog.player.avatarColor } as CSSProperties}>
+              <div className="badge-album-spine" aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="text-sm font-black" style={{ color: catalog.player.avatarColor }}>{catalog.player.displayName} 的贴纸册</p>
+                <p className="text-xs font-bold text-ink/55">已贴上 {catalog.unlockedCount}/{catalog.items.length} 枚</p>
+                <div className="badge-sticker-strip" aria-hidden="true">
+                  {catalog.items.slice(0, 8).map((badge) => (
+                    <span className={clsx("badge-mini-sticker", badge.unlocked ? "is-on" : null)} data-rarity={badge.rarity} key={badge.name} />
+                  ))}
+                </div>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-white/80 ring-1 ring-ink/10">
-                <div className="h-full rounded-full bg-grass" style={{ width: `${catalog.progress}%` }} />
+              <div className="badge-album-stats">
+                <strong>{catalog.progress}%</strong>
+                <span>收藏率</span>
               </div>
             </div>
           ))}
@@ -1426,30 +1433,36 @@ function LedgerView({
         <div className={clsx("grid gap-4 lg:grid-cols-2", catalogOpen ? null : "hidden")}>
           {badgeCatalogs.map((catalog) => (
             <div className="badge-catalog-panel" key={catalog.player.id}>
-              <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="badge-album-header mb-4">
                 <div className="flex items-center gap-3">
                   <PixelAvatar row={catalog.stat} size="small" />
                   <div>
                     <p className="text-sm font-bold text-ink/55">{catalog.player.displayName}</p>
-                    <h3 className="text-xl font-black text-ink">{catalog.unlockedCount}/{catalog.items.length} 已解锁</h3>
+                    <h3 className="text-xl font-black text-ink">第 {catalog.player.code === "player_a" ? "01" : "02"} 本收藏册</h3>
                   </div>
                 </div>
                 <div className="badge-progress-ring" style={{ "--badge-progress": `${catalog.progress}%` } as CSSProperties}>
-                  {catalog.progress}%
+                  <span>{catalog.progress}%</span>
                 </div>
+              </div>
+              <div className="mb-4 grid gap-2 sm:grid-cols-3">
+                <Metric label="已贴上" value={`${catalog.unlockedCount}`} />
+                <Metric label="未解锁" value={`${catalog.items.length - catalog.unlockedCount}`} />
+                <Metric label="闪光徽章" value={`${catalog.items.filter((badge) => badge.unlocked && (badge.rarity === "史诗" || badge.rarity === "闪耀")).length}`} />
               </div>
               <div className="badge-catalog-grid">
                 {catalog.items.map((badge) => (
-                  <div className={clsx("badge-card", badge.unlocked ? "is-unlocked" : "is-locked")} key={badge.name}>
-                    <div className="badge-pixel-icon" aria-hidden="true" />
+                  <div className={clsx("badge-card", badge.unlocked ? "is-unlocked" : "is-locked")} data-rarity={badge.rarity} key={badge.name}>
+                    <div className="badge-pixel-icon" data-rarity={badge.rarity} aria-hidden="true" />
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-black text-ink">{badge.name}</p>
-                        <span className="rounded-full bg-white/80 px-2 py-0.5 text-[0.68rem] font-black text-ink/55 ring-1 ring-ink/10">{badge.rarity}</span>
+                        <span className="badge-rarity-pill" data-rarity={badge.rarity}>{badge.rarity}</span>
                       </div>
                       <p className="mt-1 text-xs font-bold leading-5 text-ink/55">{badge.note}</p>
-                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/70 ring-1 ring-ink/10">
-                        <div className="h-full rounded-full bg-grass" style={{ width: `${badge.progress}%` }} />
+                      <p className="mt-1 text-xs font-black leading-5 text-ink/45">{badge.flavor}</p>
+                      <div className="badge-card-progress mt-2">
+                        <div style={{ width: `${badge.progress}%` }} />
                       </div>
                       <p className="mt-1 text-xs font-black text-ink/50">{badge.progressText}</p>
                     </div>
@@ -1641,6 +1654,7 @@ type BadgeCatalogItem = LedgerBadge & {
   progress: number;
   progressText: string;
   rarity: string;
+  flavor: string;
 };
 
 function buildBadgeSummaries(players: Player[], matches: Match[], settlements: Settlement[]) {
@@ -1669,6 +1683,7 @@ function buildBadgeSummaries(players: Player[], matches: Match[], settlements: S
         progress: 0,
         progressText: "0/1",
         rarity: "初始",
+        flavor: "收藏册第一页还很干净。",
       });
     }
 
@@ -1724,6 +1739,15 @@ function buildPlayerBadgeCatalog(
   const funHitsByKey = (key: Match["funQuestionKey"]) =>
     ownSettlements.filter((settlement) => matchById[settlement.matchId]?.funQuestionKey === key && settlement.funPoints > 0).length;
   const positiveWins = ownSettlements.filter((settlement) => settlement.netAmount > 0).length;
+  const negativeLosses = ownSettlements.filter((settlement) => settlement.netAmount < 0).length;
+  const neutralSettlements = ownSettlements.filter((settlement) => settlement.netAmount === 0).length;
+  const bigWins = ownSettlements.filter((settlement) => settlement.netAmount >= 10).length;
+  const closeLosses = ownSettlements.filter((settlement) => settlement.netAmount < 0 && Math.abs(settlement.netAmount) <= 5).length;
+  const groupSettled = ownSettlements.filter((settlement) => matchById[settlement.matchId]?.stage === "group").length;
+  const settledMatches = ownSettlements.length;
+  const comebackFunHits = funHitsByKey("comeback_win");
+  const firstHalfFunHits = funHitsByKey("first_half_goal") + funHitsByKey("first_half_2_plus") + funHitsByKey("draw_at_half_time");
+  const goalFestFunHits = funHitsByKey("total_goals_3_plus") + funHitsByKey("total_goals_4_plus") + funHitsByKey("both_teams_score");
 
   const makeBadge = (
     name: string,
@@ -1732,6 +1756,7 @@ function buildPlayerBadgeCatalog(
     value: number,
     target: number,
     rarity: string,
+    flavor: string,
     unlockedOverride?: boolean,
   ): BadgeCatalogItem => {
     const unlocked = unlockedOverride ?? value >= target;
@@ -1743,28 +1768,40 @@ function buildPlayerBadgeCatalog(
       progress: Math.min(100, Math.round((Math.max(value, 0) / Math.max(target, 1)) * 100)),
       progressText: unlocked ? "已解锁" : `${Math.max(value, 0)}/${target}`,
       rarity,
+      flavor,
     };
   };
 
   return [
-    makeBadge("比分预言家", "精确比分命中 1 次。", 100, stat.exactScores, 1, "稀有"),
-    makeBadge("三分拆弹手", "精确比分命中 3 次。", 98, stat.exactScores, 3, "史诗"),
-    makeBadge("玄学大师", "趣味题命中 3 次。", 95, stat.funHits, 3, "稀有", stat.funHits > 0 && stat.funHits === highestFunHits),
-    makeBadge("隐藏任务达人", "趣味题命中 5 次。", 92, stat.funHits, 5, "史诗"),
-    makeBadge("反向球王", "累计净赢小于 0。", 88, stat.netAmount < 0 ? 1 : 0, 1, "剧情", stat.netAmount < 0),
-    makeBadge("点球猎人", "点球趣味题命中 1 次。", 84, funHitsByKey("penalty_goal"), 1, "稀有"),
-    makeBadge("补时心碎者", "比分擦边命中但没精确 1 次。", 80, scoreNearHits, 1, "剧情"),
-    makeBadge("净赢领跑者", "当前净赢排名第一。", 76, stat.netAmount > 0 && stat.netAmount === highestNet ? 1 : 0, 1, "闪耀", stat.netAmount > 0 && stat.netAmount === highestNet),
-    makeBadge("稳胆专家", "胜平负累计拿到 4 分。", 72, resultPoints, 4, "常见"),
-    makeBadge("火眼金睛", "比分项拿分 1 次。", 68, scoreHits, 1, "常见"),
-    makeBadge("连胜小火苗", "获得三连胜徽章 1 次。", 64, stat.streakBadges, 1, "稀有"),
-    makeBadge("淘汰赛导演", "淘汰赛晋级球队猜中 1 次。", 60, advanceHits, 1, "史诗"),
-    makeBadge("开门红", "第一笔结算净赢为正。", 56, firstSettlement?.netAmount && firstSettlement.netAmount > 0 ? 1 : 0, 1, "剧情", Boolean(firstSettlement && firstSettlement.netAmount > 0)),
-    makeBadge("零封守门员", "零封趣味题命中 1 次。", 52, funHitsByKey("clean_sheet"), 1, "稀有"),
-    makeBadge("补时雷达", "75 分钟后进球趣味题命中 1 次。", 48, funHitsByKey("late_goal_after_75"), 1, "稀有"),
-    makeBadge("乌龙雷达", "乌龙球趣味题命中 1 次。", 44, funHitsByKey("own_goal"), 1, "稀有"),
-    makeBadge("黄牌侦探", "黄牌 4+ 趣味题命中 1 次。", 40, funHitsByKey("yellow_cards_4_plus"), 1, "稀有"),
-    makeBadge("小金库开张", "净赢场次达到 2 场。", 36, positiveWins, 2, "常见"),
+    makeBadge("比分预言家", "精确比分命中 1 次。", 120, stat.exactScores, 1, "稀有", "这张贴纸会被贴在比分牌正中间。"),
+    makeBadge("三分拆弹手", "精确比分命中 3 次。", 118, stat.exactScores, 3, "史诗", "像在补时读秒里剪对了最后一根线。"),
+    makeBadge("玄学大师", "趣味题命中 3 次。", 115, stat.funHits, 3, "稀有", "没有证据，但宇宙很配合。", stat.funHits > 0 && stat.funHits === highestFunHits),
+    makeBadge("隐藏任务达人", "趣味题命中 5 次。", 112, stat.funHits, 5, "史诗", "专门在赛前小房间里翻暗格。"),
+    makeBadge("反向球王", "累计净赢小于 0。", 108, stat.netAmount < 0 ? 1 : 0, 1, "剧情", "输也要输得有封面感。", stat.netAmount < 0),
+    makeBadge("十元重炮", "单场净赢达到 10r。", 104, bigWins, 1, "闪耀", "一脚把账本踢出火花。"),
+    makeBadge("点球猎人", "点球趣味题命中 1 次。", 100, funHitsByKey("penalty_goal"), 1, "稀有", "十二码前的眼神特别稳。"),
+    makeBadge("补时心碎者", "比分擦边命中但没精确 1 次。", 96, scoreNearHits, 1, "剧情", "差一点点就能把贴纸镀金。"),
+    makeBadge("净赢领跑者", "当前净赢排名第一。", 92, stat.netAmount > 0 && stat.netAmount === highestNet ? 1 : 0, 1, "闪耀", "贴纸边缘自带聚光灯。", stat.netAmount > 0 && stat.netAmount === highestNet),
+    makeBadge("稳胆专家", "胜平负累计拿到 4 分。", 88, resultPoints, 4, "常见", "不花哨，但总能把方向押准。"),
+    makeBadge("火眼金睛", "比分项拿分 1 次。", 84, scoreHits, 1, "常见", "看比分走势像看天气预报。"),
+    makeBadge("连胜小火苗", "获得三连胜徽章 1 次。", 80, stat.streakBadges, 1, "稀有", "小火苗开始沿着账本边缘跑。"),
+    makeBadge("淘汰赛导演", "淘汰赛晋级球队猜中 1 次。", 76, advanceHits, 1, "史诗", "镜头一转，晋级剧本已经写好。"),
+    makeBadge("开门红", "第一笔结算净赢为正。", 72, firstSettlement?.netAmount && firstSettlement.netAmount > 0 ? 1 : 0, 1, "剧情", "第一枚贴纸带着开场哨。", Boolean(firstSettlement && firstSettlement.netAmount > 0)),
+    makeBadge("绝平体质", "净赢为 0 的比赛达到 2 场。", 68, neutralSettlements, 2, "剧情", "互相拉扯到最后还是握手。"),
+    makeBadge("险败收藏家", "小负 5r 以内达到 2 场。", 64, closeLosses, 2, "剧情", "每一场都差一点翻盘。"),
+    makeBadge("情绪过山车", "既有净赢也有净输。", 60, positiveWins > 0 && negativeLosses > 0 ? 1 : 0, 1, "剧情", "这本册子的页脚已经开始起伏。"),
+    makeBadge("小组赛巡游者", "小组赛已结算 12 场。", 56, groupSettled, 12, "常见", "从 A 组逛到夜宵摊。"),
+    makeBadge("连环竞猜家", "已结算比赛达到 20 场。", 52, settledMatches, 20, "稀有", "贴纸越来越密，像赛程表长出了花纹。"),
+    makeBadge("积分收割机", "累计积分达到 50 分。", 48, stat.points, 50, "史诗", "不是每场都炸裂，但仓库慢慢满了。"),
+    makeBadge("零封守门员", "零封趣味题命中 1 次。", 44, funHitsByKey("clean_sheet"), 1, "稀有", "门线前挂着一枚绿色贴纸。"),
+    makeBadge("补时雷达", "75 分钟后进球趣味题命中 1 次。", 40, funHitsByKey("late_goal_after_75"), 1, "稀有", "专门在最后十五分钟亮灯。"),
+    makeBadge("红牌观察员", "红牌趣味题命中 1 次。", 36, funHitsByKey("red_card"), 1, "稀有", "场面一热，贴纸就醒了。"),
+    makeBadge("半场导演", "半场类趣味题命中 1 次。", 32, firstHalfFunHits, 1, "常见", "上半场的小剧本也有人盯着。"),
+    makeBadge("进球雨预警", "进球大战类趣味题命中 2 次。", 28, goalFestFunHits, 2, "稀有", "比分牌开始下雨。"),
+    makeBadge("逆转嗅探器", "逆转取胜趣味题命中 1 次。", 24, comebackFunHits, 1, "史诗", "闻到剧情反转的味道。"),
+    makeBadge("乌龙雷达", "乌龙球趣味题命中 1 次。", 20, funHitsByKey("own_goal"), 1, "稀有", "离谱剧情也能收入册中。"),
+    makeBadge("黄牌侦探", "黄牌 4+ 趣味题命中 1 次。", 16, funHitsByKey("yellow_cards_4_plus"), 1, "稀有", "把裁判口袋也算进了剧本。"),
+    makeBadge("小金库开张", "净赢场次达到 2 场。", 12, positiveWins, 2, "常见", "账本角落开始叮当响。"),
   ];
 }
 
