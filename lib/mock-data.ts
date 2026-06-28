@@ -1,4 +1,4 @@
-import type { Match, Player, Prediction, Settlement } from "@/lib/types";
+import type { ChampionPick, Match, Player, Prediction, Settlement } from "@/lib/types";
 import { settleMatch } from "@/lib/settlement";
 
 export const mockPlayers: Player[] = [
@@ -39,6 +39,8 @@ export const mockMatches: Match[] = [
     winnerTeam: null,
     funQuestionKey: "both_teams_score",
     funQuestionAnswer: null,
+    knockoutScriptQuestionKey: null,
+    knockoutScriptAnswer: null,
     redCards: null,
     penaltyGoals: null,
   },
@@ -62,6 +64,8 @@ export const mockMatches: Match[] = [
     winnerTeam: null,
     funQuestionKey: "total_goals_3_plus",
     funQuestionAnswer: null,
+    knockoutScriptQuestionKey: null,
+    knockoutScriptAnswer: null,
     redCards: null,
     penaltyGoals: null,
   },
@@ -85,8 +89,35 @@ export const mockMatches: Match[] = [
     winnerTeam: "巴西",
     funQuestionKey: "both_teams_score",
     funQuestionAnswer: true,
+    knockoutScriptQuestionKey: null,
+    knockoutScriptAnswer: null,
     redCards: 0,
     penaltyGoals: 0,
+  },
+  {
+    id: "m4",
+    apiFootballFixtureId: null,
+    matchNumber: 73,
+    stage: "round_of_32",
+    groupName: null,
+    homeTeam: "巴西",
+    awayTeam: "德国",
+    kickoffAt: "2026-06-29T03:00:00+08:00",
+    venue: "温哥华",
+    status: "scheduled",
+    homeScore90: null,
+    awayScore90: null,
+    homeScoreExtra: null,
+    awayScoreExtra: null,
+    homePenaltyScore: null,
+    awayPenaltyScore: null,
+    winnerTeam: null,
+    funQuestionKey: "both_teams_score",
+    funQuestionAnswer: null,
+    knockoutScriptQuestionKey: "reaches_extra_time",
+    knockoutScriptAnswer: null,
+    redCards: null,
+    penaltyGoals: null,
   },
 ];
 
@@ -99,6 +130,8 @@ export const mockPredictions: Prediction[] = [
     predictedAwayScore: 1,
     funAnswer: true,
     predictedWinnerTeam: null,
+    predictedAdvanceMethod: null,
+    knockoutScriptAnswer: null,
     lockedAt: "2026-06-15T02:30:00+08:00",
   },
   {
@@ -109,8 +142,23 @@ export const mockPredictions: Prediction[] = [
     predictedAwayScore: 1,
     funAnswer: false,
     predictedWinnerTeam: null,
+    predictedAdvanceMethod: null,
+    knockoutScriptAnswer: null,
     lockedAt: "2026-06-15T02:31:00+08:00",
   },
 ];
 
 export const mockSettlements: Settlement[] = settleMatch(mockMatches[2], mockPredictions);
+
+export const mockChampionPicks: ChampionPick[] = [
+  {
+    playerId: "p1",
+    championTeam: "巴西",
+    lockedAt: null,
+  },
+  {
+    playerId: "p2",
+    championTeam: "德国",
+    lockedAt: null,
+  },
+];

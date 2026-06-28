@@ -13,6 +13,8 @@ export type MatchStatus = "scheduled" | "live" | "finished" | "postponed" | "can
 
 export type PickResult = "home" | "draw" | "away";
 
+export type AdvanceMethod = "regular" | "extra_time" | "penalties";
+
 export type FunQuestionKey =
   | "total_goals_2_plus"
   | "total_goals_3_plus"
@@ -35,6 +37,16 @@ export type FunQuestionKey =
   | "own_goal"
   | "yellow_cards_4_plus";
 
+export type KnockoutScriptQuestionKey =
+  | "reaches_extra_time"
+  | "reaches_penalties"
+  | "decided_in_90"
+  | "winner_clean_sheet"
+  | "both_teams_score_90"
+  | "late_goal_after_75"
+  | "red_card"
+  | "penalty_goal";
+
 export type Match = {
   id: string;
   apiFootballFixtureId: number | null;
@@ -55,6 +67,8 @@ export type Match = {
   winnerTeam: string | null;
   funQuestionKey: FunQuestionKey;
   funQuestionAnswer: boolean | null;
+  knockoutScriptQuestionKey: KnockoutScriptQuestionKey | null;
+  knockoutScriptAnswer: boolean | null;
   redCards: number | null;
   penaltyGoals: number | null;
   createdAt?: string;
@@ -78,6 +92,8 @@ export type Prediction = {
   predictedAwayScore: number;
   funAnswer: boolean;
   predictedWinnerTeam: string | null;
+  predictedAdvanceMethod: AdvanceMethod | null;
+  knockoutScriptAnswer: boolean | null;
   lockedAt: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -92,10 +108,21 @@ export type Settlement = {
   scorePoints: number;
   funPoints: number;
   advancePoints: number;
+  advanceMethodPoints: number;
+  knockoutScriptPoints: number;
   exactScoreBonus: number;
   netAmount: number;
   streakBadge: boolean;
   settledAt: string;
+};
+
+export type ChampionPick = {
+  id?: string;
+  playerId: string;
+  championTeam: string;
+  lockedAt: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type LedgerRow = {

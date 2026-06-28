@@ -22,6 +22,8 @@ const baseMatch: Match = {
   winnerTeam: "巴西",
   funQuestionKey: "both_teams_score",
   funQuestionAnswer: true,
+  knockoutScriptQuestionKey: null,
+  knockoutScriptAnswer: null,
   redCards: 0,
   penaltyGoals: 0,
 };
@@ -34,6 +36,8 @@ const aPrediction: Prediction = {
   predictedAwayScore: 1,
   funAnswer: true,
   predictedWinnerTeam: null,
+  predictedAdvanceMethod: null,
+  knockoutScriptAnswer: null,
   lockedAt: null,
 };
 
@@ -45,6 +49,8 @@ const bPrediction: Prediction = {
   predictedAwayScore: 1,
   funAnswer: false,
   predictedWinnerTeam: null,
+  predictedAdvanceMethod: null,
+  knockoutScriptAnswer: null,
   lockedAt: null,
 };
 
@@ -106,6 +112,41 @@ describe("settleMatch", () => {
 
     expect(settlements[0].points).toBe(9);
     expect(settlements[1].points).toBe(2);
+  });
+
+  it("adds knockout advance method and script points", () => {
+    const knockoutMatch: Match = {
+      ...baseMatch,
+      stage: "round_of_32",
+      homeTeam: "法国",
+      awayTeam: "英格兰",
+      homeScore90: 1,
+      awayScore90: 1,
+      homeScoreExtra: 2,
+      awayScoreExtra: 1,
+      winnerTeam: "法国",
+      knockoutScriptQuestionKey: "reaches_extra_time",
+      knockoutScriptAnswer: true,
+    };
+
+    const score = scorePrediction(knockoutMatch, {
+      ...aPrediction,
+      predictedHomeScore: 1,
+      predictedAwayScore: 1,
+      predictedWinnerTeam: "法国",
+      predictedAdvanceMethod: "extra_time",
+      knockoutScriptAnswer: true,
+    });
+
+    expect(score).toMatchObject({
+      points: 13,
+      resultPoints: 2,
+      scorePoints: 3,
+      funPoints: 2,
+      advancePoints: 2,
+      advanceMethodPoints: 2,
+      knockoutScriptPoints: 2,
+    });
   });
 
   it("caps base loss when a player is under loser protection", () => {

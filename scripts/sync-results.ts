@@ -1,7 +1,8 @@
 import { createAdminClient } from "@insforge/sdk";
 import { funQuestionOptions } from "../lib/fun-questions";
+import { chooseKnockoutScriptQuestion } from "../lib/knockout-script-questions";
 import { settleMatch } from "../lib/settlement";
-import type { FunQuestionKey, Match, MatchStage, MatchStatus, Prediction, Settlement } from "../lib/types";
+import type { FunQuestionKey, KnockoutScriptQuestionKey, Match, MatchStage, MatchStatus, Prediction, Settlement } from "../lib/types";
 
 const insforgeUrl = requiredEnv("NEXT_PUBLIC_INSFORGE_URL");
 const insforgeApiKey = requiredEnv("INSFORGE_API_KEY");
@@ -89,6 +90,8 @@ type DbPrediction = {
   predicted_away_score: number;
   fun_answer: boolean;
   predicted_winner_team: string | null;
+  predicted_advance_method: Prediction["predictedAdvanceMethod"];
+  knockout_script_answer: boolean | null;
   locked_at: string | null;
 };
 
@@ -109,6 +112,7 @@ type DbMatchQuestion = {
   id: string;
   match_number: number;
   fun_question_key: FunQuestionKey;
+  knockout_script_question_key: KnockoutScriptQuestionKey | null;
 };
 
 async function main() {
@@ -143,13 +147,13 @@ async function runSync(reason: string) {
   try {
     const { fixtures, source, note } = await fetchFixtures();
     const sortedFixtures = fixtures.sort((a, b) => new Date(a.fixture.date).getTime() - new Date(b.fixture.date).getTime());
-    const preservedFunQuestions = await loadPredictedMatchFunQuestions();
+    const preservedQuestions = await loadPredictedMatchQuestions();
     const upsertedMatches: Match[] = [];
 
     for (const [index, fixture] of sortedFixtures.entries()) {
       const events = fixture.fixture.id > 0 && isFinished(fixture) ? await fetchEvents(fixture.fixture.id) : [];
       const matchNumber = index + 1;
-      const match = await upsertMatch(fixture, matchNumber, events, preservedFunQuestions[matchNumber]);
+      const match = await upsertMatch(fixture, matchNumber, events, preservedQuestions[matchNumber]);
       upsertedMatches.push(match);
     }
 
@@ -384,10 +388,10 @@ function mergeApiFootballFixtures(fallbackFixtures: ApiFixture[], apiFixtures: A
   });
 }
 
-async function loadPredictedMatchFunQuestions(): Promise<Record<number, FunQuestionKey>> {
+async function loadPredictedMatchQuestions(): Promise<Record<number, { funQuestionKey: FunQuestionKey; knockoutScriptQuestionKey: KnockoutScriptQuestionKey | null }>> {
   const { data: matchesData, error: matchesError } = await insforge.database
     .from("matches")
-    .select("id, match_number, fun_question_key");
+    .select("id, match_number, fun_question_key, knockout_script_question_key");
   if (matchesError) {
     throw matchesError;
   }
@@ -401,7 +405,13 @@ async function loadPredictedMatchFunQuestions(): Promise<Record<number, FunQuest
   return Object.fromEntries(
     (matchesData as DbMatchQuestion[])
       .filter((match) => predictedMatchIds.has(match.id))
-      .map((match) => [Number(match.match_number), match.fun_question_key]),
+      .map((match) => [
+        Number(match.match_number),
+        {
+          funQuestionKey: match.fun_question_key,
+          knockoutScriptQuestionKey: match.knockout_script_question_key,
+        },
+      ]),
   );
 }
 
@@ -409,14 +419,18 @@ async function upsertMatch(
   fixture: ApiFixture,
   matchNumber: number,
   events: ApiEvent[],
-  preservedFunQuestionKey?: FunQuestionKey,
+  preservedQuestions?: { funQuestionKey: FunQuestionKey; knockoutScriptQuestionKey: KnockoutScriptQuestionKey | null },
 ): Promise<Match> {
-  const funQuestionKey = preservedFunQuestionKey ?? chooseFunQuestion(matchNumber);
+  const stage = mapStage(fixture.league.round);
+  const funQuestionKey = preservedQuestions?.funQuestionKey ?? chooseFunQuestion(matchNumber);
+  const knockoutScriptQuestionKey = stage === "group"
+    ? null
+    : preservedQuestions?.knockoutScriptQuestionKey ?? chooseKnockoutScriptQuestion(matchNumber);
   const eventFacts = summarizeEvents(events);
   const row = {
     api_football_fixture_id: fixture.fixture.id > 0 ? fixture.fixture.id : null,
     match_number: matchNumber,
-    stage: mapStage(fixture.league.round),
+    stage,
     group_name: parseGroupName(fixture.league.round),
     home_team: fixture.teams.home.name,
     away_team: fixture.teams.away.name,
@@ -432,6 +446,8 @@ async function upsertMatch(
     winner_team: fixture.teams.home.winner ? fixture.teams.home.name : fixture.teams.away.winner ? fixture.teams.away.name : null,
     fun_question_key: funQuestionKey,
     fun_question_answer: isFinished(fixture) ? answerFunQuestion(funQuestionKey, fixture, eventFacts) : null,
+    knockout_script_question_key: knockoutScriptQuestionKey,
+    knockout_script_answer: knockoutScriptQuestionKey && isFinished(fixture) ? answerKnockoutScriptQuestion(knockoutScriptQuestionKey, fixture, eventFacts) : null,
     red_cards: eventFacts.redCards,
     penalty_goals: eventFacts.penaltyGoals,
     raw_payload: fixture,
@@ -491,6 +507,8 @@ async function upsertSettlements(settlements: Settlement[]) {
     score_points: settlement.scorePoints,
     fun_points: settlement.funPoints,
     advance_points: settlement.advancePoints,
+    advance_method_points: settlement.advanceMethodPoints,
+    knockout_script_points: settlement.knockoutScriptPoints,
     exact_score_bonus: settlement.exactScoreBonus,
     net_amount: settlement.netAmount,
     streak_badge: settlement.streakBadge,
@@ -636,6 +654,39 @@ function answerFunQuestion(
   }
 }
 
+function answerKnockoutScriptQuestion(
+  key: KnockoutScriptQuestionKey,
+  fixture: ApiFixture,
+  facts: ReturnType<typeof summarizeEvents>,
+) {
+  const home = fixture.score.fulltime.home ?? fixture.goals.home ?? 0;
+  const away = fixture.score.fulltime.away ?? fixture.goals.away ?? 0;
+  const hasExtraTime = fixture.score.extratime.home !== null || fixture.score.extratime.away !== null || fixture.fixture.status.short === "AET";
+  const hasPenalties = fixture.score.penalty.home !== null || fixture.score.penalty.away !== null || fixture.fixture.status.short === "PEN";
+  const winnerName = fixture.teams.home.winner ? fixture.teams.home.name : fixture.teams.away.winner ? fixture.teams.away.name : null;
+  const winnerIsHome = winnerName === fixture.teams.home.name;
+  const winnerConceded = winnerIsHome ? away : home;
+
+  switch (key) {
+    case "reaches_extra_time":
+      return hasExtraTime || hasPenalties;
+    case "reaches_penalties":
+      return hasPenalties;
+    case "decided_in_90":
+      return !hasExtraTime && !hasPenalties && winnerName !== null;
+    case "winner_clean_sheet":
+      return winnerName !== null && winnerConceded === 0;
+    case "both_teams_score_90":
+      return home > 0 && away > 0;
+    case "late_goal_after_75":
+      return facts.lateGoalsAfter75 > 0;
+    case "red_card":
+      return facts.redCards > 0;
+    case "penalty_goal":
+      return facts.penaltyGoals > 0;
+  }
+}
+
 async function createSyncRun() {
   const { data, error } = await insforge.database
     .from("sync_runs")
@@ -676,6 +727,8 @@ function mapMatch(row: Record<string, unknown>): Match {
     winnerTeam: row.winner_team as string | null,
     funQuestionKey: row.fun_question_key as FunQuestionKey,
     funQuestionAnswer: row.fun_question_answer as boolean | null,
+    knockoutScriptQuestionKey: row.knockout_script_question_key as KnockoutScriptQuestionKey | null,
+    knockoutScriptAnswer: row.knockout_script_answer as boolean | null,
     redCards: nullableNumber(row.red_cards),
     penaltyGoals: nullableNumber(row.penalty_goals),
   };
@@ -691,6 +744,8 @@ function mapPrediction(row: DbPrediction): Prediction {
     predictedAwayScore: row.predicted_away_score,
     funAnswer: row.fun_answer,
     predictedWinnerTeam: row.predicted_winner_team,
+    predictedAdvanceMethod: row.predicted_advance_method,
+    knockoutScriptAnswer: row.knockout_script_answer,
     lockedAt: row.locked_at,
   };
 }

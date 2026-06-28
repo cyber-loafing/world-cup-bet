@@ -1,4 +1,4 @@
-import type { Match, PickResult, Prediction, Settlement } from "@/lib/types";
+import type { AdvanceMethod, Match, PickResult, Prediction, Settlement } from "@/lib/types";
 
 const amountByPointDiff: Record<number, number> = {
   0: 0,
@@ -39,6 +39,19 @@ export function isKnockout(stage: Match["stage"]) {
   return stage !== "group";
 }
 
+export function getActualAdvanceMethod(match: Pick<Match, "stage" | "homePenaltyScore" | "awayPenaltyScore" | "homeScoreExtra" | "awayScoreExtra">): AdvanceMethod | null {
+  if (!isKnockout(match.stage)) {
+    return null;
+  }
+  if (match.homePenaltyScore !== null || match.awayPenaltyScore !== null) {
+    return "penalties";
+  }
+  if (match.homeScoreExtra !== null || match.awayScoreExtra !== null) {
+    return "extra_time";
+  }
+  return "regular";
+}
+
 export function isPredictionLocked(match: Pick<Match, "kickoffAt">, lockedAt: string | null, now = new Date()) {
   return Boolean(lockedAt) || now >= new Date(match.kickoffAt);
 }
@@ -52,6 +65,8 @@ export function scorePrediction(match: Match, prediction: Prediction): ScoreBrea
       scorePoints: 0,
       funPoints: 0,
       advancePoints: 0,
+      advanceMethodPoints: 0,
+      knockoutScriptPoints: 0,
       exactScoreBonus: 0,
     };
   }
@@ -82,13 +97,30 @@ export function scorePrediction(match: Match, prediction: Prediction): ScoreBrea
     prediction.predictedWinnerTeam === match.winnerTeam
       ? 2
       : 0;
+  const actualAdvanceMethod = getActualAdvanceMethod(match);
+  const advanceMethodPoints =
+    isKnockout(match.stage) &&
+    prediction.predictedAdvanceMethod !== null &&
+    actualAdvanceMethod !== null &&
+    prediction.predictedAdvanceMethod === actualAdvanceMethod
+      ? 2
+      : 0;
+  const knockoutScriptPoints =
+    isKnockout(match.stage) &&
+    prediction.knockoutScriptAnswer !== null &&
+    match.knockoutScriptAnswer !== null &&
+    prediction.knockoutScriptAnswer === match.knockoutScriptAnswer
+      ? 2
+      : 0;
 
   return {
-    points: resultPoints + scorePoints + funPoints + advancePoints,
+    points: resultPoints + scorePoints + funPoints + advancePoints + advanceMethodPoints + knockoutScriptPoints,
     resultPoints,
     scorePoints,
     funPoints,
     advancePoints,
+    advanceMethodPoints,
+    knockoutScriptPoints,
     exactScoreBonus: exactScore ? 2 : 0,
   };
 }

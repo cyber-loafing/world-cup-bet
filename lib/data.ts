@@ -1,7 +1,7 @@
 import { insforge } from "@/lib/insforge";
 import { clearRememberedSession, rememberSession, restoreRememberedSession } from "@/lib/auth-session";
-import { mockMatches, mockPlayers, mockPredictions, mockSettlements } from "@/lib/mock-data";
-import type { Match, Player, Prediction, Settlement } from "@/lib/types";
+import { mockChampionPicks, mockMatches, mockPlayers, mockPredictions, mockSettlements } from "@/lib/mock-data";
+import type { ChampionPick, Match, Player, Prediction, Settlement } from "@/lib/types";
 
 type DbMatch = {
   id: string;
@@ -23,6 +23,8 @@ type DbMatch = {
   winner_team: string | null;
   fun_question_key: Match["funQuestionKey"];
   fun_question_answer: boolean | null;
+  knockout_script_question_key: Match["knockoutScriptQuestionKey"];
+  knockout_script_answer: boolean | null;
   red_cards: number | null;
   penalty_goals: number | null;
   created_at?: string;
@@ -46,6 +48,8 @@ type DbPrediction = {
   predicted_away_score: number;
   fun_answer: boolean;
   predicted_winner_team: string | null;
+  predicted_advance_method: Prediction["predictedAdvanceMethod"];
+  knockout_script_answer: boolean | null;
   locked_at: string | null;
   created_at?: string;
   updated_at?: string;
@@ -60,10 +64,21 @@ type DbSettlement = {
   score_points: number;
   fun_points: number;
   advance_points: number;
+  advance_method_points: number;
+  knockout_script_points: number;
   exact_score_bonus: number;
   net_amount: number;
   streak_badge: boolean;
   settled_at: string;
+};
+
+type DbChampionPick = {
+  id?: string;
+  player_id: string;
+  champion_team: string;
+  locked_at: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export async function getSessionUser() {
@@ -143,6 +158,17 @@ export async function loadSettlements(): Promise<Settlement[]> {
   return (data as DbSettlement[]).map(mapSettlement);
 }
 
+export async function loadChampionPicks(): Promise<ChampionPick[]> {
+  if (!insforge) {
+    return mockChampionPicks;
+  }
+  const { data, error } = await insforge.database.from("champion_picks").select("*");
+  if (error) {
+    throw error;
+  }
+  return (data as DbChampionPick[]).map(mapChampionPick);
+}
+
 export async function savePrediction(input: Omit<Prediction, "id" | "lockedAt"> & { id?: string }) {
   if (!insforge) {
     throw new Error("InsForge is not configured. Set NEXT_PUBLIC_INSFORGE_URL and NEXT_PUBLIC_INSFORGE_ANON_KEY.");
@@ -156,10 +182,42 @@ export async function savePrediction(input: Omit<Prediction, "id" | "lockedAt"> 
     predicted_away_score: input.predictedAwayScore,
     fun_answer: input.funAnswer,
     predicted_winner_team: input.predictedWinnerTeam,
+    predicted_advance_method: input.predictedAdvanceMethod,
+    knockout_script_answer: input.knockoutScriptAnswer,
   };
   const { error } = await insforge.database.from("predictions").upsert(row, {
     onConflict: "match_id,player_id",
   });
+  if (error) {
+    throw error;
+  }
+}
+
+export async function saveChampionPick(input: Omit<ChampionPick, "id" | "lockedAt"> & { id?: string }) {
+  if (!insforge) {
+    throw new Error("InsForge is not configured. Set NEXT_PUBLIC_INSFORGE_URL and NEXT_PUBLIC_INSFORGE_ANON_KEY.");
+  }
+  const row = {
+    id: input.id,
+    player_id: input.playerId,
+    champion_team: input.championTeam,
+  };
+  const { error } = await insforge.database.from("champion_picks").upsert(row, {
+    onConflict: "player_id",
+  });
+  if (error) {
+    throw error;
+  }
+}
+
+export async function lockChampionPick(pickId: string) {
+  if (!insforge) {
+    throw new Error("InsForge is not configured.");
+  }
+  const { error } = await insforge.database
+    .from("champion_picks")
+    .update({ locked_at: new Date().toISOString() })
+    .eq("id", pickId);
   if (error) {
     throw error;
   }
@@ -199,6 +257,8 @@ function mapMatch(row: DbMatch): Match {
     winnerTeam: row.winner_team,
     funQuestionKey: row.fun_question_key,
     funQuestionAnswer: row.fun_question_answer,
+    knockoutScriptQuestionKey: row.knockout_script_question_key,
+    knockoutScriptAnswer: row.knockout_script_answer,
     redCards: row.red_cards,
     penaltyGoals: row.penalty_goals,
     createdAt: row.created_at,
@@ -226,6 +286,8 @@ function mapPrediction(row: DbPrediction): Prediction {
     predictedAwayScore: row.predicted_away_score,
     funAnswer: row.fun_answer,
     predictedWinnerTeam: row.predicted_winner_team,
+    predictedAdvanceMethod: row.predicted_advance_method,
+    knockoutScriptAnswer: row.knockout_script_answer,
     lockedAt: row.locked_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -242,9 +304,22 @@ function mapSettlement(row: DbSettlement): Settlement {
     scorePoints: row.score_points,
     funPoints: row.fun_points,
     advancePoints: row.advance_points,
+    advanceMethodPoints: row.advance_method_points,
+    knockoutScriptPoints: row.knockout_script_points,
     exactScoreBonus: row.exact_score_bonus,
     netAmount: row.net_amount,
     streakBadge: row.streak_badge,
     settledAt: row.settled_at,
+  };
+}
+
+function mapChampionPick(row: DbChampionPick): ChampionPick {
+  return {
+    id: row.id,
+    playerId: row.player_id,
+    championTeam: row.champion_team,
+    lockedAt: row.locked_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }

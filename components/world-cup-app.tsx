@@ -26,20 +26,24 @@ import {
 import clsx from "clsx";
 import {
   getSessionUser,
+  loadChampionPicks,
   loadMatches,
   loadPlayers,
   loadPredictions,
   loadSettlements,
+  lockChampionPick,
   lockPrediction,
+  saveChampionPick,
   savePrediction,
   signIn,
   signOut,
 } from "@/lib/data";
 import { funQuestions } from "@/lib/fun-questions";
+import { knockoutScriptQuestions } from "@/lib/knockout-script-questions";
 import { formatBeijingTime, formatFullBeijingTime, formatMoney, stageLabel } from "@/lib/format";
-import { getPredictedResult, isPredictionLocked } from "@/lib/settlement";
+import { getPredictedResult, isKnockout, isPredictionLocked } from "@/lib/settlement";
 import { isInsForgeConfigured } from "@/lib/insforge";
-import type { DashboardStats, Match, Player, Prediction, Settlement } from "@/lib/types";
+import type { AdvanceMethod, ChampionPick, DashboardStats, Match, Player, Prediction, Settlement } from "@/lib/types";
 
 type View = "dashboard" | "matches" | "ledger" | "leaderboard";
 
@@ -48,6 +52,7 @@ type AppState = {
   players: Player[];
   predictions: Prediction[];
   settlements: Settlement[];
+  championPicks: ChampionPick[];
 };
 
 type DramaMode = "empty" | "tie" | "close" | "breakaway";
@@ -85,6 +90,7 @@ const emptyState: AppState = {
   players: [],
   predictions: [],
   settlements: [],
+  championPicks: [],
 };
 
 const goalOptions = Array.from({ length: 11 }, (_, index) => index);
@@ -129,14 +135,15 @@ export function WorldCupApp({ initialView }: { initialView: View }) {
     setError(null);
     try {
       const user = await getSessionUser();
-      const [players, matches, predictions, settlements] = await Promise.all([
+      const [players, matches, predictions, settlements, championPicks] = await Promise.all([
         loadPlayers(),
         loadMatches(),
         loadPredictions(),
         loadSettlements(),
+        loadChampionPicks(),
       ]);
       setCurrentUserId(user?.id ?? null);
-      setState({ players, matches, predictions, settlements });
+      setState({ players, matches, predictions, settlements, championPicks });
       setSelectedMatchId((current) => current ?? getDefaultScheduleMatch(matches)?.id ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载失败");
@@ -206,7 +213,18 @@ export function WorldCupApp({ initialView }: { initialView: View }) {
         </div>
       ) : null}
 
-      {view === "dashboard" ? <Dashboard stats={stats} nextMatch={nextMatch} matches={state.matches} players={state.players} settlements={state.settlements} /> : null}
+      {view === "dashboard" ? (
+        <Dashboard
+          championPicks={state.championPicks}
+          currentPlayer={currentPlayer}
+          matches={state.matches}
+          nextMatch={nextMatch}
+          players={state.players}
+          settlements={state.settlements}
+          stats={stats}
+          onSaved={refresh}
+        />
+      ) : null}
       {view === "matches" ? (
         <MatchesView
           currentPlayer={currentPlayer}
@@ -308,17 +326,23 @@ function NavButton({ active, icon, label, onClick }: { active: boolean; icon: Re
 }
 
 function Dashboard({
+  championPicks,
+  currentPlayer,
   stats,
   nextMatch,
   matches,
   players,
   settlements,
+  onSaved,
 }: {
+  championPicks: ChampionPick[];
+  currentPlayer: Player | null;
   stats: DashboardStats[];
   nextMatch: Match | null;
   matches: Match[];
   players: Player[];
   settlements: Settlement[];
+  onSaved: () => void;
 }) {
   const finished = matches.filter((match) => match.status === "finished").length;
   const totalNet = settlements.reduce((sum, row) => sum + Math.max(row.netAmount, 0), 0);
@@ -360,6 +384,16 @@ function Dashboard({
       <GroupStageSummary matches={matches} players={players} settlements={settlements} />
 
       <TournamentMap matches={matches} />
+
+      <KnockoutBracket matches={matches} />
+
+      <ChampionPickPanel
+        championPicks={championPicks}
+        currentPlayer={currentPlayer}
+        matches={matches}
+        players={players}
+        onSaved={onSaved}
+      />
 
       <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
@@ -555,6 +589,207 @@ function TournamentMap({ matches }: { matches: Match[] }) {
   );
 }
 
+function KnockoutBracket({ matches }: { matches: Match[] }) {
+  const stages = buildKnockoutBracket(matches);
+
+  if (stages.every((stage) => stage.matches.length === 0)) {
+    return null;
+  }
+
+  return (
+    <div className="knockout-bracket rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-coral">淘汰赛对阵图</p>
+          <h3 className="text-2xl font-black text-ink">一场一命的路线图</h3>
+        </div>
+        <span className="rounded-full bg-ink px-3 py-1 text-sm font-black text-white">32 强开跑</span>
+      </div>
+      <div className="knockout-bracket-scroll">
+        {stages.map((stage) => (
+          <div className="knockout-bracket-column" key={stage.key}>
+            <div className="knockout-bracket-heading">
+              <p>{stage.label}</p>
+              <span>{stage.finished}/{stage.totalDisplay}</span>
+            </div>
+            <div className="grid gap-2">
+              {stage.matches.length > 0 ? (
+                stage.matches.map((match) => (
+                  <div className={clsx("knockout-match-card", match.status === "finished" ? "is-finished" : null)} key={match.id}>
+                    <p className="text-xs font-black text-ink/45">第 {match.matchNumber} 场 · {formatBeijingClock(match.kickoffAt)}</p>
+                    <div className="mt-2 grid gap-1">
+                      <KnockoutTeamLine match={match} side="home" />
+                      <KnockoutTeamLine match={match} side="away" />
+                    </div>
+                    <p className="mt-2 text-xs font-bold text-ink/52">
+                      {match.status === "finished"
+                        ? `晋级：${match.winnerTeam ?? "待确认"}`
+                        : match.venue ?? "待定场馆"}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="knockout-match-card is-empty">
+                  <p className="font-black text-ink/55">等待对阵生成</p>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function KnockoutTeamLine({ match, side }: { match: Match; side: "home" | "away" }) {
+  const team = side === "home" ? match.homeTeam : match.awayTeam;
+  const score = side === "home" ? match.homeScore90 : match.awayScore90;
+  const isWinner = match.winnerTeam === team;
+
+  return (
+    <div className={clsx("knockout-team-line", isWinner ? "is-winner" : null)}>
+      <span>{team}</span>
+      <strong>{score ?? "-"}</strong>
+    </div>
+  );
+}
+
+function ChampionPickPanel({
+  championPicks,
+  currentPlayer,
+  matches,
+  players,
+  onSaved,
+}: {
+  championPicks: ChampionPick[];
+  currentPlayer: Player | null;
+  matches: Match[];
+  players: Player[];
+  onSaved: () => void;
+}) {
+  const candidates = useMemo(() => buildChampionCandidates(matches), [matches]);
+  const currentPick = championPicks.find((pick) => pick.playerId === currentPlayer?.id);
+  const [selectedTeam, setSelectedTeam] = useState(currentPick?.championTeam ?? candidates[0] ?? "");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const lockDeadline = getChampionPickDeadline(matches);
+  const locked = Boolean(currentPick?.lockedAt);
+
+  useEffect(() => {
+    setSelectedTeam(currentPick?.championTeam ?? candidates[0] ?? "");
+  }, [currentPick?.championTeam, candidates]);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!currentPlayer) {
+      setMessage("当前用户未绑定玩家。");
+      return;
+    }
+    if (!selectedTeam) {
+      setMessage("还没有可选择的冠军球队。");
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      await saveChampionPick({
+        id: currentPick?.id,
+        playerId: currentPlayer.id,
+        championTeam: selectedTeam,
+      });
+      onSaved();
+      setMessage("冠军押注已保存");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "保存失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function lock() {
+    if (!currentPick?.id) {
+      setMessage("请先保存冠军押注。");
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      await lockChampionPick(currentPick.id);
+      onSaved();
+      setMessage("冠军押注已锁定");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "锁定失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="champion-panel rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-grass">押注冠军</p>
+          <h3 className="text-2xl font-black text-ink">决赛前的最大伏笔</h3>
+          <p className="mt-2 text-sm font-bold leading-6 text-ink/60">
+            每人只能选 1 支冠军球队，建议在 32 强第一场开球前锁定。冠军押注先进入展示，最终奖励可以在决赛前再确认。
+          </p>
+        </div>
+        <span className="rounded-full bg-gold/25 px-3 py-1 text-sm font-black text-ink ring-1 ring-gold/30">
+          {lockDeadline ? `${formatBeijingClock(lockDeadline)} 前` : "待赛程"}
+        </span>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
+        <form className="champion-form" onSubmit={submit}>
+          <label className="block">
+            <span className="mb-1 block text-sm font-bold">我的冠军</span>
+            <select
+              className="w-full rounded-md border border-ink/15 bg-white px-3 py-2"
+              disabled={busy || locked || candidates.length === 0}
+              onChange={(event) => setSelectedTeam(event.target.value)}
+              value={selectedTeam}
+            >
+              {candidates.map((team) => (
+                <option key={team} value={team}>{team}</option>
+              ))}
+            </select>
+          </label>
+          {message ? <p className="mt-3 text-sm font-bold text-ink/70">{message}</p> : null}
+          {locked ? <p className="mt-3 text-sm font-bold text-coral">冠军押注已进入锁定状态。</p> : null}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button className="inline-flex items-center gap-2 rounded-md bg-grass px-4 py-2 font-black text-white disabled:opacity-50" disabled={busy || locked || candidates.length === 0} type="submit">
+              {busy ? <Loader2 className="animate-spin" size={17} /> : <Save size={17} />}
+              保存冠军
+            </button>
+            <button className="inline-flex items-center gap-2 rounded-md bg-ink px-4 py-2 font-black text-white disabled:opacity-50" disabled={busy || locked || !currentPick?.id} onClick={() => void lock()} type="button">
+              <Lock size={17} />
+              锁定
+            </button>
+          </div>
+        </form>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {players.map((player) => {
+            const pick = championPicks.find((item) => item.playerId === player.id);
+            return (
+              <div className="champion-pick-card" key={player.id}>
+                <div className="flex items-center gap-3">
+                  <PixelAvatar row={playerAvatarRow(player)} size="small" />
+                  <div>
+                    <p className="text-sm font-bold text-ink/55">{player.displayName}</p>
+                    <h4 className="text-xl font-black text-ink">{pick?.championTeam ?? "还没下注"}</h4>
+                  </div>
+                </div>
+                <p className="mt-3 text-xs font-black text-ink/50">{pick?.lockedAt ? "已锁定冠军伏笔" : "可在锁定前修改"}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function buildGroupMap(matches: Match[]) {
   const groupNames = "ABCDEFGHIJKL".split("");
   return groupNames.map((name) => {
@@ -585,6 +820,54 @@ function buildKnockoutMap(matches: Match[]) {
       finished: stageMatches.filter((match) => match.status === "finished").length,
     };
   });
+}
+
+function buildKnockoutBracket(matches: Match[]) {
+  const stages: Array<{ key: Match["stage"]; label: string; fallbackTotal: number }> = [
+    { key: "round_of_32", label: "32 强", fallbackTotal: 16 },
+    { key: "round_of_16", label: "16 强", fallbackTotal: 8 },
+    { key: "quarter_final", label: "8 强", fallbackTotal: 4 },
+    { key: "semi_final", label: "4 强", fallbackTotal: 2 },
+    { key: "third_place", label: "季军赛", fallbackTotal: 1 },
+    { key: "final", label: "决赛", fallbackTotal: 1 },
+  ];
+
+  return stages.map((stage) => {
+    const stageMatches = matches
+      .filter((match) => match.stage === stage.key)
+      .sort((a, b) => a.matchNumber - b.matchNumber);
+    return {
+      ...stage,
+      matches: stageMatches,
+      totalDisplay: stageMatches.length || stage.fallbackTotal,
+      finished: stageMatches.filter((match) => match.status === "finished").length,
+    };
+  });
+}
+
+function buildChampionCandidates(matches: Match[]) {
+  const roundOf32Teams = matches
+    .filter((match) => match.stage === "round_of_32")
+    .flatMap((match) => [match.homeTeam, match.awayTeam])
+    .filter(isConcreteTeamName);
+  const knockoutTeams = matches
+    .filter((match) => isKnockout(match.stage))
+    .flatMap((match) => [match.homeTeam, match.awayTeam])
+    .filter(isConcreteTeamName);
+  const fallbackTeams = matches
+    .flatMap((match) => [match.homeTeam, match.awayTeam])
+    .filter(isConcreteTeamName);
+  return Array.from(new Set(roundOf32Teams.length > 0 ? roundOf32Teams : knockoutTeams.length > 0 ? knockoutTeams : fallbackTeams)).sort((a, b) => a.localeCompare(b));
+}
+
+function isConcreteTeamName(team: string) {
+  return Boolean(team) && team !== "待定" && !/^[WL]\d+$/i.test(team);
+}
+
+function getChampionPickDeadline(matches: Match[]) {
+  return matches
+    .filter((match) => isKnockout(match.stage))
+    .sort((a, b) => new Date(a.kickoffAt).getTime() - new Date(b.kickoffAt).getTime())[0]?.kickoffAt ?? null;
 }
 
 function buildGroupStageSummary(matches: Match[], players: Player[], settlements: Settlement[]) {
@@ -1072,7 +1355,7 @@ function PlayerRoomSeat({
       </div>
       <p className="mt-3 text-sm font-bold leading-6 text-ink/65">
         {prediction
-          ? `押 ${pickResultLabel(getPredictedResult(prediction), match)}，比分 ${match.homeTeam} ${prediction.predictedHomeScore}-${prediction.predictedAwayScore} ${match.awayTeam}，趣味题选${prediction.funAnswer ? "是" : "否"}。`
+          ? buildPredictionSummary(match, prediction)
           : "还没交卷，房间里留着一张空白小纸条。"}
       </p>
       {settlement ? (
@@ -1099,6 +1382,8 @@ function PredictionForm({
   const [awayScore, setAwayScore] = useState(prediction?.predictedAwayScore ?? 1);
   const [funAnswer, setFunAnswer] = useState(prediction?.funAnswer ?? true);
   const [winner, setWinner] = useState(prediction?.predictedWinnerTeam ?? match.homeTeam);
+  const [advanceMethod, setAdvanceMethod] = useState<AdvanceMethod>(prediction?.predictedAdvanceMethod ?? "regular");
+  const [scriptAnswer, setScriptAnswer] = useState(prediction?.knockoutScriptAnswer ?? true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -1107,11 +1392,14 @@ function PredictionForm({
     setAwayScore(prediction?.predictedAwayScore ?? 1);
     setFunAnswer(prediction?.funAnswer ?? true);
     setWinner(prediction?.predictedWinnerTeam ?? match.homeTeam);
+    setAdvanceMethod(prediction?.predictedAdvanceMethod ?? "regular");
+    setScriptAnswer(prediction?.knockoutScriptAnswer ?? true);
   }, [match.id, match.homeTeam, prediction]);
   const derivedPickResult = getPredictedResult({
     predictedHomeScore: homeScore,
     predictedAwayScore: awayScore,
   });
+  const knockout = isKnockout(match.stage);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1130,7 +1418,9 @@ function PredictionForm({
         predictedHomeScore: homeScore,
         predictedAwayScore: awayScore,
         funAnswer,
-        predictedWinnerTeam: match.stage === "group" ? null : winner,
+        predictedWinnerTeam: knockout ? winner : null,
+        predictedAdvanceMethod: knockout ? advanceMethod : null,
+        knockoutScriptAnswer: knockout ? scriptAnswer : null,
       });
       onSaved();
       setMessage("已保存");
@@ -1199,15 +1489,40 @@ function PredictionForm({
           </select>
         </label>
         {match.stage !== "group" ? (
-          <label className="block sm:col-span-2">
-            <span className="mb-1 block text-sm font-bold">晋级球队</span>
-            <select className="w-full rounded-md border border-ink/15 bg-white px-3 py-2" disabled={locked} onChange={(event) => setWinner(event.target.value)} value={winner}>
-              <option value={match.homeTeam}>{match.homeTeam}</option>
-              <option value={match.awayTeam}>{match.awayTeam}</option>
-            </select>
-          </label>
+          <>
+            <label className="block">
+              <span className="mb-1 block text-sm font-bold">晋级球队</span>
+              <select className="w-full rounded-md border border-ink/15 bg-white px-3 py-2" disabled={locked} onChange={(event) => setWinner(event.target.value)} value={winner}>
+                <option value={match.homeTeam}>{match.homeTeam}</option>
+                <option value={match.awayTeam}>{match.awayTeam}</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-bold">晋级方式</span>
+              <select className="w-full rounded-md border border-ink/15 bg-white px-3 py-2" disabled={locked} onChange={(event) => setAdvanceMethod(event.target.value as AdvanceMethod)} value={advanceMethod}>
+                <option value="regular">90 分钟晋级</option>
+                <option value="extra_time">加时晋级</option>
+                <option value="penalties">点球晋级</option>
+              </select>
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-sm font-bold">淘汰赛剧本题</span>
+              <div className="mb-2 rounded-md bg-white/70 px-3 py-2 text-sm font-black text-ink ring-1 ring-ink/10">
+                {match.knockoutScriptQuestionKey ? knockoutScriptQuestions[match.knockoutScriptQuestionKey] : "等待剧本题生成"}
+              </div>
+              <select className="w-full rounded-md border border-ink/15 bg-white px-3 py-2" disabled={locked} onChange={(event) => setScriptAnswer(event.target.value === "yes")} value={scriptAnswer ? "yes" : "no"}>
+                <option value="yes">是</option>
+                <option value="no">否</option>
+              </select>
+            </label>
+          </>
         ) : null}
       </div>
+      {knockout ? (
+        <div className="mt-3 rounded-md bg-white/70 p-3 text-sm font-bold leading-6 text-ink/60 ring-1 ring-ink/10">
+          淘汰赛每场最高 13 分：胜平负 2、精确比分 3、趣味题 2、晋级球队 2、晋级方式 2、剧本题 2。
+        </div>
+      ) : null}
       {message ? <p className="mt-3 text-sm font-bold text-ink/70">{message}</p> : null}
       <div className="mt-4 flex flex-wrap gap-2">
         <button className="inline-flex items-center gap-2 rounded-md bg-grass px-4 py-2 font-black text-white disabled:opacity-50" disabled={busy || locked} type="submit">
@@ -1227,6 +1542,22 @@ function pickResultLabel(pickResult: Prediction["pickResult"], match: Match) {
   if (pickResult === "home") return `${match.homeTeam} 胜`;
   if (pickResult === "away") return `${match.awayTeam} 胜`;
   return "平局";
+}
+
+function advanceMethodLabel(method: AdvanceMethod | null) {
+  if (method === "regular") return "90 分钟晋级";
+  if (method === "extra_time") return "加时晋级";
+  if (method === "penalties") return "点球晋级";
+  return "未选择";
+}
+
+function buildPredictionSummary(match: Match, prediction: Prediction) {
+  const base = `押 ${pickResultLabel(getPredictedResult(prediction), match)}，比分 ${match.homeTeam} ${prediction.predictedHomeScore}-${prediction.predictedAwayScore} ${match.awayTeam}，趣味题选${prediction.funAnswer ? "是" : "否"}`;
+  if (!isKnockout(match.stage)) {
+    return `${base}。`;
+  }
+  const scriptAnswer = prediction.knockoutScriptAnswer === null ? "未选" : prediction.knockoutScriptAnswer ? "是" : "否";
+  return `${base}，晋级选 ${prediction.predictedWinnerTeam ?? "未选"}，方式选${advanceMethodLabel(prediction.predictedAdvanceMethod)}，剧本题选${scriptAnswer}。`;
 }
 
 function playerAvatarRow(player: Player): DashboardStats {
@@ -1709,6 +2040,11 @@ function LedgerStoryCard({
         <p className="text-lg font-black text-ink">{match.homeTeam} {match.homeScore90}-{match.awayScore90} {match.awayTeam}</p>
         <p className="mt-2 text-sm font-bold leading-6 text-ink/65">{story.line}</p>
         <p className="mt-2 text-sm font-bold leading-6 text-ink/55">隐藏任务：{funQuestions[match.funQuestionKey]} 答案是 {match.funQuestionAnswer === null ? "待确认" : match.funQuestionAnswer ? "是" : "否"}。</p>
+        {isKnockout(match.stage) && match.knockoutScriptQuestionKey ? (
+          <p className="mt-2 text-sm font-bold leading-6 text-ink/55">
+            淘汰赛剧本：{knockoutScriptQuestions[match.knockoutScriptQuestionKey]} 答案是 {match.knockoutScriptAnswer === null ? "待确认" : match.knockoutScriptAnswer ? "是" : "否"}。
+          </p>
+        ) : null}
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {players.map((player) => {
@@ -1746,6 +2082,8 @@ function SettlementDetail({
     { label: "比分", value: settlement.scorePoints, suffix: "分" },
     { label: "趣味题", value: settlement.funPoints, suffix: "分" },
     { label: "晋级", value: settlement.advancePoints, suffix: "分" },
+    { label: "晋级方式", value: settlement.advanceMethodPoints, suffix: "分" },
+    { label: "剧本题", value: settlement.knockoutScriptPoints, suffix: "分" },
     { label: "精确比分奖励", value: settlement.exactScoreBonus, suffix: "r" },
   ];
 
@@ -1757,7 +2095,7 @@ function SettlementDetail({
       </div>
       <p className="mt-2 text-sm font-bold leading-6 text-ink/60">
         {prediction
-          ? `赛前纸条：${pickResultLabel(getPredictedResult(prediction), match)}，${match.homeTeam} ${prediction.predictedHomeScore}-${prediction.predictedAwayScore} ${match.awayTeam}，趣味题选${prediction.funAnswer ? "是" : "否"}。`
+          ? `赛前纸条：${buildPredictionSummary(match, prediction)}`
           : "赛前纸条缺席。"}
       </p>
       <div className="mt-3 grid gap-2">
