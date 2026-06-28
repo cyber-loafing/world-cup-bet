@@ -206,7 +206,7 @@ export function WorldCupApp({ initialView }: { initialView: View }) {
         </div>
       ) : null}
 
-      {view === "dashboard" ? <Dashboard stats={stats} nextMatch={nextMatch} matches={state.matches} settlements={state.settlements} /> : null}
+      {view === "dashboard" ? <Dashboard stats={stats} nextMatch={nextMatch} matches={state.matches} players={state.players} settlements={state.settlements} /> : null}
       {view === "matches" ? (
         <MatchesView
           currentPlayer={currentPlayer}
@@ -220,7 +220,7 @@ export function WorldCupApp({ initialView }: { initialView: View }) {
         />
       ) : null}
       {view === "ledger" ? <LedgerView matches={state.matches} players={state.players} predictions={state.predictions} settlements={state.settlements} /> : null}
-      {view === "leaderboard" ? <LeaderboardView stats={stats} /> : null}
+      {view === "leaderboard" ? <LeaderboardView matches={state.matches} players={state.players} settlements={state.settlements} stats={stats} /> : null}
     </main>
   );
 }
@@ -311,11 +311,13 @@ function Dashboard({
   stats,
   nextMatch,
   matches,
+  players,
   settlements,
 }: {
   stats: DashboardStats[];
   nextMatch: Match | null;
   matches: Match[];
+  players: Player[];
   settlements: Settlement[];
 }) {
   const finished = matches.filter((match) => match.status === "finished").length;
@@ -354,6 +356,8 @@ function Dashboard({
         <DramaCard line={drama.line} />
         <TodayCalendar matches={todayMatches} />
       </div>
+
+      <GroupStageSummary matches={matches} players={players} settlements={settlements} />
 
       <TournamentMap matches={matches} />
 
@@ -423,6 +427,71 @@ function TodayCalendar({ matches }: { matches: Match[] }) {
           <p className="mt-1 text-sm font-bold text-ink/60">下一次开球前，先攒一点玄学能量。</p>
         </div>
       )}
+    </div>
+  );
+}
+
+function GroupStageSummary({
+  matches,
+  players,
+  settlements,
+}: {
+  matches: Match[];
+  players: Player[];
+  settlements: Settlement[];
+}) {
+  const summary = buildGroupStageSummary(matches, players, settlements);
+
+  if (summary.totalMatches === 0) {
+    return null;
+  }
+
+  return (
+    <div className="group-summary rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-bold text-coral">小组赛总结</p>
+          <h3 className="mt-1 text-3xl font-black text-ink">{summary.title}</h3>
+          <p className="mt-2 max-w-3xl text-sm font-bold leading-6 text-ink/62">{summary.line}</p>
+        </div>
+        <div className="group-summary-badge">
+          <span>{summary.finishedMatches}/{summary.totalMatches}</span>
+          <strong>{summary.isComplete ? "收官" : "进行中"}</strong>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Metric label="阶段领跑" value={summary.leaderText} />
+        <Metric label="小组赛净赢差" value={summary.gapText} />
+        <Metric label="精确比分王" value={summary.exactText} />
+        <Metric label="趣味题王" value={summary.funText} />
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="group-summary-scoreboard">
+          {summary.playerStats.map((row) => (
+            <div className="group-summary-player" key={row.playerId}>
+              <PixelAvatar row={row} size="small" />
+              <div className="min-w-0">
+                <p className="font-black text-ink">{row.displayName}</p>
+                <p className="text-xs font-bold text-ink/55">{row.points} 分 · {formatMoney(row.netAmount)} · 精确 {row.exactScores} · 趣味 {row.funHits}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="group-round-grid">
+          {summary.rounds.map((round) => (
+            <div className={clsx("group-round-card", round.finished === round.total ? "is-complete" : null)} key={round.key}>
+              <p className="text-xs font-black text-ink/50">{round.note}</p>
+              <h4 className="font-black text-ink">{round.label}</h4>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/80 ring-1 ring-ink/10">
+                <div className="h-full rounded-full bg-grass" style={{ width: `${round.progress}%` }} />
+              </div>
+              <p className="mt-1 text-xs font-black text-ink/55">{round.finished}/{round.total} 已完赛</p>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -516,6 +585,67 @@ function buildKnockoutMap(matches: Match[]) {
       finished: stageMatches.filter((match) => match.status === "finished").length,
     };
   });
+}
+
+function buildGroupStageSummary(matches: Match[], players: Player[], settlements: Settlement[]) {
+  const groupMatches = matches
+    .filter((match) => match.stage === "group")
+    .sort((a, b) => a.matchNumber - b.matchNumber);
+  const groupMatchIds = new Set(groupMatches.map((match) => match.id));
+  const groupSettlements = settlements.filter((settlement) => groupMatchIds.has(settlement.matchId));
+  const playerStats = buildStats(players, groupSettlements);
+  const leader = playerStats[0] ?? null;
+  const netSortedStats = [...playerStats].sort((a, b) => b.netAmount - a.netAmount || b.points - a.points);
+  const netLeader = netSortedStats[0] ?? null;
+  const netTrailer = netSortedStats[netSortedStats.length - 1] ?? null;
+  const totalMatches = groupMatches.length || 72;
+  const finishedMatches = groupMatches.filter((match) => match.status === "finished").length;
+  const settledMatches = new Set(groupSettlements.map((settlement) => settlement.matchId)).size;
+  const isComplete = finishedMatches >= totalMatches;
+  const gap = netLeader && netTrailer ? netLeader.netAmount - netTrailer.netAmount : 0;
+  const exactLeader = [...playerStats].sort((a, b) => b.exactScores - a.exactScores || b.points - a.points)[0] ?? null;
+  const funLeader = [...playerStats].sort((a, b) => b.funHits - a.funHits || b.points - a.points)[0] ?? null;
+  const title = isComplete ? "小组赛正式封箱" : "小组赛收官进行中";
+  const leaderText = leader ? `${leader.displayName} ${leader.points} 分` : "等待结算";
+  const gapText = gap > 0 ? formatMoney(gap) : "平手";
+  const exactText = exactLeader && exactLeader.exactScores > 0 ? `${exactLeader.displayName} ${exactLeader.exactScores} 次` : "暂无命中";
+  const funText = funLeader && funLeader.funHits > 0 ? `${funLeader.displayName} ${funLeader.funHits} 次` : "暂无命中";
+  const line = netLeader && netTrailer && gap > 0
+    ? `${totalMatches} 场小组赛的账本已经翻到最后一页，${netLeader.displayName} 以 ${formatMoney(gap)} 的小组赛净赢差带着优势进入淘汰赛。`
+    : isComplete
+      ? `${totalMatches} 场小组赛已经全部写进账本，两个人暂时没有在净赢上拉开差距，淘汰赛会重新点燃剧情。`
+      : `小组赛已完赛 ${finishedMatches}/${totalMatches} 场，已结算 ${settledMatches}/${totalMatches} 场，最后几页正在写入账本。`;
+
+  const rounds = ledgerStorySectionOrder
+    .filter((section) => section.key.startsWith("group_"))
+    .map((section) => {
+      const roundMatches = groupMatches.filter((match) => getLedgerStorySectionKey(match) === section.key);
+      const total = roundMatches.length || section.fallbackTotal;
+      const finished = roundMatches.filter((match) => match.status === "finished").length;
+      return {
+        key: section.key,
+        label: section.label,
+        note: section.note,
+        total,
+        finished,
+        progress: Math.min(100, Math.round((finished / Math.max(total, 1)) * 100)),
+      };
+    });
+
+  return {
+    title,
+    line,
+    totalMatches,
+    finishedMatches,
+    settledMatches,
+    isComplete,
+    leaderText,
+    gapText,
+    exactText,
+    funText,
+    playerStats,
+    rounds,
+  };
 }
 
 function normalizeRunnerStats(stats: DashboardStats[], mode: DramaMode) {
@@ -1805,21 +1935,35 @@ function buildPlayerBadgeCatalog(
   ];
 }
 
-function LeaderboardView({ stats }: { stats: DashboardStats[] }) {
+function LeaderboardView({
+  matches,
+  players,
+  settlements,
+  stats,
+}: {
+  matches: Match[];
+  players: Player[];
+  settlements: Settlement[];
+  stats: DashboardStats[];
+}) {
   return (
-    <section className="grid gap-4 sm:grid-cols-2">
-      {stats.map((row, index) => (
-        <div className="rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10" key={row.playerId}>
-          <p className="text-sm font-bold text-grass">第 {index + 1} 名</p>
-          <h2 className="mt-1 text-3xl font-black">{row.displayName}</h2>
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <Metric label="积分" value={`${row.points}`} />
-            <Metric label="净赢" value={formatMoney(row.netAmount)} />
-            <Metric label="精确比分" value={`${row.exactScores}`} />
-            <Metric label="三连胜" value={`${row.streakBadges}`} />
+    <section className="grid gap-4">
+      <GroupStageSummary matches={matches} players={players} settlements={settlements} />
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {stats.map((row, index) => (
+          <div className="rounded-lg bg-white/88 p-5 shadow-soft ring-1 ring-ink/10" key={row.playerId}>
+            <p className="text-sm font-bold text-grass">总榜第 {index + 1} 名</p>
+            <h2 className="mt-1 text-3xl font-black">{row.displayName}</h2>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <Metric label="积分" value={`${row.points}`} />
+              <Metric label="净赢" value={formatMoney(row.netAmount)} />
+              <Metric label="精确比分" value={`${row.exactScores}`} />
+              <Metric label="三连胜" value={`${row.streakBadges}`} />
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </section>
   );
 }

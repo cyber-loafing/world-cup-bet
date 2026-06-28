@@ -221,6 +221,89 @@ select {
   color: #ffffff;
 }
 
+.group-summary {
+  background:
+    linear-gradient(90deg, rgba(74, 203, 155, 0.16) 0 8px, transparent 8px),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(223, 246, 233, 0.78) 48%, rgba(255, 247, 221, 0.82)),
+    #ffffff;
+  overflow: hidden;
+  position: relative;
+}
+
+.group-summary::after {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.45) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.42) 1px, transparent 1px);
+  background-size: 28px 28px;
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.group-summary > * {
+  position: relative;
+  z-index: 1;
+}
+
+.group-summary-badge {
+  align-items: center;
+  background: #17211c;
+  border-radius: 8px;
+  color: #ffffff;
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 88px;
+  padding: 0.7rem 0.85rem;
+}
+
+.group-summary-badge span {
+  font-size: 1.35rem;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.group-summary-badge strong {
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 0.72rem;
+  font-weight: 950;
+  margin-top: 0.25rem;
+}
+
+.group-summary-scoreboard {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.group-summary-player {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(23, 33, 28, 0.1);
+  border-radius: 8px;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+.group-round-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.group-round-card {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(23, 33, 28, 0.1);
+  border-radius: 8px;
+  padding: 0.8rem;
+}
+
+.group-round-card.is-complete {
+  background:
+    linear-gradient(135deg, rgba(74, 203, 155, 0.22), rgba(255, 255, 255, 0.8)),
+    #ffffff;
+}
+
 .ledger-title-card {
   background:
     linear-gradient(135deg, rgba(223, 246, 233, 0.78), rgba(255, 247, 221, 0.76)),
@@ -1322,6 +1405,10 @@ select {
   }
 
   .pixel-scoreboard {
+    grid-template-columns: 1fr;
+  }
+
+  .group-round-grid {
     grid-template-columns: 1fr;
   }
 }
